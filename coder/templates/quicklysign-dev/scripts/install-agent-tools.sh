@@ -32,7 +32,8 @@ Description=Coder Agent Activity Watchdog
 After=network.target
 
 [Service]
-ExecStart=/home/coder/scripts/agent-watchdog.sh
+EnvironmentFile=%h/.coder_env
+ExecStart=/home/coder/.local/bin/agent-watchdog
 Restart=always
 RestartSec=60
 

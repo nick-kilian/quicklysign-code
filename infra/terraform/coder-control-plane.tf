@@ -21,7 +21,7 @@ resource "google_cloud_run_v2_service" "coder" {
       }
       env {
         name  = "CODER_ACCESS_URL"
-        value = "https://coder-${data.google_project.project.number}.${var.region}.a.run.app"
+        value = google_cloud_run_v2_service.coder[0].uri
       }
 
       ports {

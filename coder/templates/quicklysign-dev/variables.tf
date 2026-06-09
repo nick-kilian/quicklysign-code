@@ -18,16 +18,6 @@ variable "region" {
   default = "us-west1"
 }
 
-variable "zone" {
-  type    = string
-  default = "us-west1-a"
-}
-
-variable "machine_type" {
-  type    = string
-  default = "t2d-standard-4"
-}
-
 variable "disk_size" {
   type    = number
   default = 200
