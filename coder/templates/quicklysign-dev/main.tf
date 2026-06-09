@@ -91,19 +91,6 @@ resource "coder_agent" "main" {
   }
 }
 
-# Standalone Persistent Disk (Survives Spot VM Preemption)
-resource "google_compute_disk" "workspace_disk" {
-  name  = "coder-${data.coder_workspace.me.owner}-${lower(data.coder_workspace.me.name)}-home"
-  type  = "pd-ssd"
-  zone  = data.coder_parameter.zone.value
-  size  = var.disk_size
-  
-  # Ensure the disk is not destroyed if the workspace is just stopped
-  lifecycle {
-    ignore_changes = [name, image]
-  }
-}
-
 resource "google_compute_instance" "workspace" {
   count        = data.coder_workspace.me.start_count
   name         = "coder-${data.coder_workspace.me.owner}-${lower(data.coder_workspace.me.name)}"
@@ -117,19 +104,13 @@ resource "google_compute_instance" "workspace" {
     instance_termination_action = "STOP"
   }
 
-  # Ephemeral boot disk for the OS
+  # Ephemeral boot disk for the OS (destroyed on preemption)
   boot_disk {
     initialize_params {
       image = "ubuntu-os-cloud/ubuntu-2204-lts"
-      size  = 30
-      type  = "pd-balanced"
+      size  = var.disk_size
+      type  = "pd-ssd"
     }
-  }
-
-  # Attach the persistent home disk
-  attached_disk {
-    source      = google_compute_disk.workspace_disk.self_link
-    device_name = "home-disk"
   }
 
   network_interface {
@@ -147,19 +128,6 @@ resource "google_compute_instance" "workspace" {
     coder_agent_token      = coder_agent.main.token
     google-logging-enabled = "true"
     
-    # Mount script for the attached disk
-    startup-script = <<-EOT
-      #!/bin/bash
-      set -e
-      # Mount the persistent disk to /home/coder if not mounted
-      if ! mount | grep -q '/home/coder'; then
-        mkfs.ext4 -F -E lazy_itable_init=0,lazy_journal_init=0,discard /dev/disk/by-id/google-home-disk || true
-        mkdir -p /home/coder
-        mount -o discard,defaults /dev/disk/by-id/google-home-disk /home/coder
-        chown -R 1000:1000 /home/coder
-      fi
-    EOT
-
     install_dev_tools   = file("${path.module}/scripts/install-dev-tools.sh")
     install_agent_tools = file("${path.module}/scripts/install-agent-tools.sh")
     agent_run           = file("${path.module}/scripts/agent-run")
