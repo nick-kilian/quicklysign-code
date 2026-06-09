@@ -1,0 +1,62 @@
+#!/bin/bash
+# agent-run: Wrapper for starting agent sessions in tmux with metadata
+
+SESSION_NAME=$1
+AGENT_TYPE=$2
+shift 2
+
+# Defaults
+REPO_PATH="."
+TTL="4h"
+
+# Simple arg parsing for --repo and --ttl
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --repo) REPO_PATH="$2"; shift ;;
+        --ttl) TTL="$2"; shift ;;
+        *) ARGS+=("$1") ;;
+    esac
+    shift
+done
+
+if [ -z "$SESSION_NAME" ] || [ -z "$AGENT_TYPE" ]; then
+    echo "Usage: agent-run <session-name> <claude|codex> [--repo <path>] [--ttl <duration>]"
+    exit 1
+fi
+
+METADATA_DIR="$HOME/.local/share/agent-sessions"
+mkdir -p "$METADATA_DIR"
+METADATA_FILE="$METADATA_DIR/$SESSION_NAME.json"
+
+# Expand path
+REPO_PATH=$(realpath "$REPO_PATH")
+
+# Write initial metadata
+cat <<EOF > "$METADATA_FILE"
+{
+  "name": "$SESSION_NAME",
+  "agent_type": "$AGENT_TYPE",
+  "repo_path": "$REPO_PATH",
+  "start_time": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "ttl": "$TTL",
+  "status": "starting"
+}
+EOF
+
+# Command to run based on agent type
+if [ "$AGENT_TYPE" == "claude" ]; then
+    AGENT_CMD="claude -n $SESSION_NAME ${ARGS[*]}"
+elif [ "$AGENT_TYPE" == "codex" ]; then
+    AGENT_CMD="codex start $SESSION_NAME ${ARGS[*]}"
+else
+    echo "Unknown agent type: $AGENT_TYPE"
+    exit 1
+fi
+
+echo "🚀 Starting $AGENT_TYPE session '$SESSION_NAME' in tmux..."
+tmux new-session -d -s "$SESSION_NAME" -c "$REPO_PATH" "$AGENT_CMD"
+
+# Update status to active
+jq ".status = \"active\"" "$METADATA_FILE" > "$METADATA_FILE.tmp" && mv "$METADATA_FILE.tmp" "$METADATA_FILE"
+
+echo "✅ Session started. Use 'worklane $SESSION_NAME' to attach."

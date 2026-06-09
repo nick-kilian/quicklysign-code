@@ -1,0 +1,34 @@
+#!/bin/bash
+# worklane: Attach to a session or start a new one in a repo
+
+SESSION_NAME=$1
+
+if [ -z "$SESSION_NAME" ]; then
+    echo "Usage: worklane <session-name>"
+    exit 1
+fi
+
+METADATA_FILE="$HOME/.local/share/agent-sessions/$SESSION_NAME.json"
+
+if [ -f "$METADATA_FILE" ]; then
+    REPO_PATH=$(jq -r '.repo_path' "$METADATA_FILE")
+    AGENT_TYPE=$(jq -r '.agent_type' "$METADATA_FILE")
+    cd "$REPO_PATH" || exit
+    
+    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+        tmux attach-session -t "$SESSION_NAME"
+    else
+        echo "⚠️ Tmux session '$SESSION_NAME' not found. It might have stopped if the VM restarted."
+        echo "💡 Resume hints:"
+        if [ "$AGENT_TYPE" == "claude" ]; then
+            echo "   claude --resume $SESSION_NAME"
+        elif [ "$AGENT_TYPE" == "codex" ]; then
+            echo "   codex resume $SESSION_NAME"
+        fi
+        
+        # Start a new tmux session in this path for the user to resume
+        tmux new-session -A -s "$SESSION_NAME"
+    fi
+else
+    echo "Unknown worklane: $SESSION_NAME"
+fi
