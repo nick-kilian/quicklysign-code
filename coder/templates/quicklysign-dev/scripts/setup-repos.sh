@@ -1,17 +1,27 @@
 #!/bin/bash
 
-echo "📂 Setting up repositories..."
+echo "📂 Checking repository configuration..."
 
 REPO_CONFIG="/home/coder/repos.json"
+
 if [ ! -f "$REPO_CONFIG" ]; then
-    echo "⚠️ No repos.json found at $REPO_CONFIG. Using example."
-    REPO_CONFIG="/home/coder/scripts/repos.example.json"
+    echo "⚠️  No repos.json found at $REPO_CONFIG."
+    echo "💡 To automate repository cloning, create $REPO_CONFIG with the following structure:"
+    echo '   ['
+    echo '     {'
+    echo '       "name": "your-repo-name",'
+    echo '       "url": "git@github.com:your-org/your-repo.git",'
+    echo '       "path": "~/src/your-repo-name"'
+    echo '     }'
+    echo '   ]'
+    echo "⏭️  Skipping automatic repository setup."
+    exit 0
 fi
+
+echo "🚀 Parsing $REPO_CONFIG and cloning repositories..."
 
 mkdir -p ~/src
 
-# Parse JSON and clone if not exists
-# Using a simple loop and jq
 if command -v jq &> /dev/null; then
     jq -c '.[]' "$REPO_CONFIG" | while read -r repo; do
         NAME=$(echo "$repo" | jq -r '.name')
@@ -21,9 +31,8 @@ if command -v jq &> /dev/null; then
         TARGET_PATH="${PATH_RAW/#\~/$HOME}"
 
         if [ ! -d "$TARGET_PATH" ]; then
-            echo "Cloning $NAME into $TARGET_PATH..."
-            # Note: This might fail if SSH keys are not set up yet
-            git clone "$URL" "$TARGET_PATH" || echo "Failed to clone $NAME (likely missing SSH keys)"
+            echo "📥 Cloning $NAME into $TARGET_PATH..."
+            git clone "$URL" "$TARGET_PATH" || echo "❌ Failed to clone $NAME (check SSH keys or URL)"
         else
             echo "✅ $NAME already exists at $TARGET_PATH"
         fi
