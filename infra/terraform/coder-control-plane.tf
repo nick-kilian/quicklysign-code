@@ -4,6 +4,10 @@ resource "google_cloud_run_v2_service" "coder" {
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
 
+  depends_on = [
+    google_secret_manager_secret_iam_member.control_plane_db_url
+  ]
+
   template {
     service_account = google_service_account.coder_control_plane.email
     timeout         = "3600s" # Max timeout for WebSockets
@@ -12,8 +16,13 @@ resource "google_cloud_run_v2_service" "coder" {
       image = var.coder_image
       
       env {
-        name  = "CODER_PG_CONNECTION_URL"
-        value = "postgres://coder:${random_password.db_password.result}@${google_sql_database_instance.coder.private_ip_address}/coder?sslmode=disable"
+        name = "CODER_PG_CONNECTION_URL"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.db_url.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "CODER_HTTP_ADDRESS"

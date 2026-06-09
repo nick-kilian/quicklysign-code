@@ -56,7 +56,7 @@ resource "coder_agent" "main" {
     set -e
     
     # Save Coder env vars for systemd watchdog
-    echo "CODER_URL=$CODER_URL" > ~/.coder_env
+    echo "CODER_URL=$CODER_ACCESS_URL" > ~/.coder_env
     echo "CODER_SESSION_TOKEN=$CODER_SESSION_TOKEN" >> ~/.coder_env
     
     # Extract scripts from GCP metadata

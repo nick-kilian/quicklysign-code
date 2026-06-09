@@ -18,7 +18,7 @@ resource "google_sql_database_instance" "coder" {
     }
   }
 
-  deletion_protection = false # Set to true for production
+  deletion_protection = true # Requires intentional manual override to destroy
 }
 
 resource "google_sql_database" "coder" {
