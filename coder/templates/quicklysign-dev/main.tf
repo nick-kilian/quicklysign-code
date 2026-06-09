@@ -114,7 +114,7 @@ resource "google_compute_instance" "workspace" {
   }
 
   network_interface {
-    network = "default"
+    network = "coder-vpc"
     access_config {}
   }
 
