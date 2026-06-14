@@ -2,34 +2,42 @@
 # list-app-ports: print this workspace's app / admin-UI TCP ports, one
 # "HOSTPORT LABEL" line per port, for the local forward-ports.sh to mirror.
 #
-# Sources, deduped by host port (first wins):
-#   1. Docker-published ports — devcontainers publish app/admin UIs to dynamic
-#      host ports (typically 32768+), so these are NOT range-filtered.
-#   2. Other host listeners in [DEV_PORT_LO, DEV_PORT_HI] — a non-docker
-#      `make run` on the host, etc. Range filtering keeps infra ports (ssh,
-#      the coder agent's high ports) out.
+# Source: Docker-published ports — devcontainers publish app/admin UIs to
+# dynamic host ports (typically 32768+). Infra/backend services that the app
+# talks to but you don't open in a browser (postgres, mysql, redis, the
+# datastore / cloud-tasks emulators, elasticsearch, …) are skipped by their
+# CONTAINER port. Override the skip list with INFRA_CONTAINER_PORTS, or set it
+# empty to forward everything:
+#   INFRA_CONTAINER_PORTS="" ssh <ws> list-app-ports        # include databases
+#   INFRA_CONTAINER_PORTS="5432 6379" ssh <ws> list-app-ports
 #
-# Override the host-listener range with DEV_PORT_LO / DEV_PORT_HI.
+# Set INCLUDE_HOST_PORTS=1 to also scan plain host listeners in
+# [DEV_PORT_LO, DEV_PORT_HI] (e.g. a non-docker `make run`). Off by default
+# because it picks up infra like the Coder agent's debug port.
 set -uo pipefail
 
+# postgres mysql redis datastore-emu cloud-tasks-emu elasticsearch memcached mongo rabbitmq
+INFRA_CONTAINER_PORTS="${INFRA_CONTAINER_PORTS:-5432 3306 6379 8081 8123 9200 9300 11211 27017 5672 15672}"
 LO=${DEV_PORT_LO:-3000}
 HI=${DEV_PORT_HI:-9999}
 
 {
-  # 1) Docker-published host ports. "Ports" looks like
-  #    "0.0.0.0:32768->3000/tcp, :::32768->3000/tcp, 9229/tcp" — keep only the
-  #    host->container mappings (skip exposed-only ports with no host side).
+  # 1) Docker-published host ports, skipping infra/backend container ports.
+  #    "Ports" pieces look like "0.0.0.0:9844->8484/tcp, :::9844->8484/tcp";
+  #    emit "hostport containerport name", then drop infra container ports.
   if command -v docker >/dev/null 2>&1; then
     docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null | while IFS='|' read -r name ports; do
       printf '%s\n' "$ports" | tr ',' '\n' | \
-        sed -n 's#.*:\([0-9][0-9]*\)->\([0-9][0-9]*\)/tcp.*#\1 '"$name"':\2#p'
-    done
+        sed -n 's#.*:\([0-9][0-9]*\)->\([0-9][0-9]*\)/tcp.*#\1 \2 '"$name"'#p'
+    done | awk -v skip="$INFRA_CONTAINER_PORTS" '
+      BEGIN { n = split(skip, a, " "); for (i = 1; i <= n; i++) s[a[i]] = 1 }
+      !s[$2] { print $1, $3 ":" $2 }'
   fi
 
-  # 2) Other host listeners within the dev range.
-  if command -v ss >/dev/null 2>&1; then
+  # 2) Optional: plain host listeners in the dev range (non-docker apps).
+  if [ "${INCLUDE_HOST_PORTS:-0}" = 1 ] && command -v ss >/dev/null 2>&1; then
     ss -H -ltn 2>/dev/null | awk '{print $4}' | sed 's#.*:##' | while read -r p; do
-      case "$p" in ''|*[!0-9]*) continue ;; esac
+      case "$p" in '' | *[!0-9]*) continue ;; esac
       [ "$p" -ge "$LO" ] && [ "$p" -le "$HI" ] && printf '%s host:%s\n' "$p" "$p"
     done
   fi

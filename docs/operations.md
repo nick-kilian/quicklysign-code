@@ -118,11 +118,15 @@ Leave it running in its own Warp tab. It **never starts a stopped workspace**
 waits, then re-attaches on its own once the workspace is next started — so it
 follows restarts / Spot preemption without keeping the workspace alive. Ctrl-C
 tears everything down. The remote side is enumerated by `list-app-ports` on the
-workspace (Docker-published ports + host listeners in `DEV_PORT_LO..DEV_PORT_HI`,
-default 3000–9999); run it over SSH to see what would be forwarded:
+workspace: Docker-published ports, **minus infra/backend services** (postgres,
+mysql, redis, the datastore/cloud-tasks emulators, elasticsearch — skipped by
+container port) so you only forward app/admin UIs. Run it over SSH to see what
+would be forwarded:
 
 ```bash
 ssh quicklysign-dev.coder list-app-ports
+INFRA_CONTAINER_PORTS="" ssh quicklysign-dev.coder list-app-ports   # include databases too
+INCLUDE_HOST_PORTS=1     ssh quicklysign-dev.coder list-app-ports   # also non-docker host listeners
 ```
 
 ## After a workspace stop/start (incl. Spot preemption)
