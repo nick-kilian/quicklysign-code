@@ -24,9 +24,19 @@ else
   coder templates create "$TEMPLATE_NAME" --directory "$TEMPLATE_DIR" --yes
 fi
 
-# Default autostop: 1 hour of no activity. The agent watchdog extends this
-# while Claude/Codex are actively working.
-coder templates edit "$TEMPLATE_NAME" --default-ttl 1h --yes \
-  || echo "NOTE: could not set default TTL via CLI; set 'Default autostop: 1 hour' in the template UI settings."
+# Default autostop: 1 hour. Activity bump is set to 0 so an open connection
+# (SSH/IDE/web terminal) does NOT extend the deadline — a forgotten-open session
+# can't keep the workspace (and its cost) alive. The agent-watchdog's explicit
+# `coder schedule extend` is then the ONLY thing that pushes the deadline out,
+# and only while Claude/Codex are actively working. Trade-off: manual (non-agent)
+# work also won't auto-extend — use an agent lane or `coder schedule extend`.
+#
+# NOTE: `--activity-bump 0` is forward-compatible but a NO-OP on coder CLI < 2.34
+# (it drops the zero value, omitempty). activity_bump=0 was applied out-of-band
+# via the API (PATCH /api/v2/templates/{id}) and is a template-level setting, so
+# it persists across these version pushes. If it ever reverts to 1h, re-apply via
+# the UI (Template > Settings > Schedule > Activity bump = 0) or the API.
+coder templates edit "$TEMPLATE_NAME" --default-ttl 1h --activity-bump 0 --yes \
+  || echo "NOTE: could not set TTL via CLI; set 'Default autostop: 1h' and 'Activity bump: 0' in the template UI settings."
 
 echo "Template $TEMPLATE_NAME is ready."

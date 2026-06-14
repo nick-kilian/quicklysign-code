@@ -80,6 +80,8 @@ tmux ls      list sessions
 
 While a lane is **active** (agent hooks, terminal output, file changes, busy children) the watchdog extends the autostop deadline. Idle/waiting → 3-min grace, then it stops extending and the workspace autostops.
 
+**An open SSH/Warp connection does NOT keep the workspace alive** (template `activity_bump = 0`). Only active agent work extends it. For hands-on (non-agent) work, run in a lane or `coder schedule extend quicklysign-dev 2h`.
+
 ```bash
 coder schedule show   quicklysign-dev      # current deadline
 coder schedule extend quicklysign-dev 2h   # manual override

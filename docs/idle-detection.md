@@ -12,6 +12,25 @@ The fix is `agent-watchdog`, a systemd **user** service on every workspace
 that extends the autostop deadline — but only while agents are doing useful
 work.
 
+### Connection activity is deliberately disabled
+
+We set the template's **`activity_bump = 0`** so that an open connection does
+*not* extend the deadline either. The reasoning: a Warp window left attached to
+an idle SSH/tmux session would otherwise keep the workspace (and its cost) alive
+indefinitely. With the bump at zero, `agent-watchdog`'s explicit
+`coder schedule extend` is the **only** thing that pushes the deadline out — so
+the workspace stays up exactly when an agent is working and stops otherwise,
+regardless of idle connections.
+
+Trade-off: **manual (non-agent) work also won't auto-extend.** A plain
+interactive session stops at the `default_ttl` deadline (1 h from start) unless
+an agent lane is active. To hold the workspace open for hands-on work, run it in
+an agent lane or bump manually: `coder schedule extend quicklysign-dev 2h`.
+
+> Setting `activity_bump = 0` via the CLI is a no-op on coder < 2.34 (the zero
+> value is dropped, omitempty); it was applied via the API and persists as a
+> template-level setting. See `scripts/create-template.sh`.
+
 ## Signals (best to worst)
 
 1. **Agent lifecycle hooks** (precise, event-driven):
