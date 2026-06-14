@@ -113,9 +113,11 @@ up locally within a poll (default 5s); tear it down and the forward drops:
 - localhost:32768 (gone)
 ```
 
-Leave it running in its own Warp tab. It survives workspace restarts / Spot
-preemption (rebuilds the master and re-establishes forwards). Ctrl-C tears
-everything down. The remote side is enumerated by `list-app-ports` on the
+Leave it running in its own Warp tab. It **never starts a stopped workspace**
+(that would defeat autostop): when the workspace stops it goes dormant and
+waits, then re-attaches on its own once the workspace is next started — so it
+follows restarts / Spot preemption without keeping the workspace alive. Ctrl-C
+tears everything down. The remote side is enumerated by `list-app-ports` on the
 workspace (Docker-published ports + host listeners in `DEV_PORT_LO..DEV_PORT_HI`,
 default 3000–9999); run it over SSH to see what would be forwarded:
 
