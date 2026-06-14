@@ -1,7 +1,7 @@
 variable "project_id" {
   description = "The GCP project ID"
   type        = string
-  default     = "nick-coder"
+  default     = "quicklysign-terraform-dev"
 }
 
 variable "region" {
@@ -11,19 +11,31 @@ variable "region" {
 }
 
 variable "zone" {
-  description = "The GCP zone"
+  description = "The GCP zone for the control plane VM"
   type        = string
   default     = "us-west1-a"
 }
 
-variable "coder_image" {
-  description = "The Coder Docker image"
+variable "coder_hostname" {
+  description = "Public hostname for the Coder server (becomes CODER_ACCESS_URL). Point an A record at the reserved static IP after the first apply."
   type        = string
-  default     = "ghcr.io/coder/coder:latest"
+  default     = "coder.ragingbucket.com"
 }
 
-variable "use_cloud_run" {
-  description = "Whether to use Cloud Run for the Coder control plane"
-  type        = bool
-  default     = true
+variable "control_plane_machine_type" {
+  description = "Machine type for the always-on Coder control plane VM. Coder's documented minimum is 1 vCPU / 2 GB; e2-small is 2 vCPU (shared) / 2 GB."
+  type        = string
+  default     = "e2-small"
+}
+
+variable "db_version" {
+  description = "Cloud SQL Postgres version. Coder requires Postgres 13+."
+  type        = string
+  default     = "POSTGRES_16"
+}
+
+variable "db_tier" {
+  description = "Cloud SQL machine tier. Shared-core is sufficient for a single-user Coder deployment."
+  type        = string
+  default     = "db-f1-micro"
 }

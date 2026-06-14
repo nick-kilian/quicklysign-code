@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# list-app-ports: print this workspace's app / admin-UI TCP ports, one
+# "HOSTPORT LABEL" line per port, for the local forward-ports.sh to mirror.
+#
+# Sources, deduped by host port (first wins):
+#   1. Docker-published ports — devcontainers publish app/admin UIs to dynamic
+#      host ports (typically 32768+), so these are NOT range-filtered.
+#   2. Other host listeners in [DEV_PORT_LO, DEV_PORT_HI] — a non-docker
+#      `make run` on the host, etc. Range filtering keeps infra ports (ssh,
+#      the coder agent's high ports) out.
+#
+# Override the host-listener range with DEV_PORT_LO / DEV_PORT_HI.
+set -uo pipefail
+
+LO=${DEV_PORT_LO:-3000}
+HI=${DEV_PORT_HI:-9999}
+
+{
+  # 1) Docker-published host ports. "Ports" looks like
+  #    "0.0.0.0:32768->3000/tcp, :::32768->3000/tcp, 9229/tcp" — keep only the
+  #    host->container mappings (skip exposed-only ports with no host side).
+  if command -v docker >/dev/null 2>&1; then
+    docker ps --format '{{.Names}}|{{.Ports}}' 2>/dev/null | while IFS='|' read -r name ports; do
+      printf '%s\n' "$ports" | tr ',' '\n' | \
+        sed -n 's#.*:\([0-9][0-9]*\)->\([0-9][0-9]*\)/tcp.*#\1 '"$name"':\2#p'
+    done
+  fi
+
+  # 2) Other host listeners within the dev range.
+  if command -v ss >/dev/null 2>&1; then
+    ss -H -ltn 2>/dev/null | awk '{print $4}' | sed 's#.*:##' | while read -r p; do
+      case "$p" in ''|*[!0-9]*) continue ;; esac
+      [ "$p" -ge "$LO" ] && [ "$p" -le "$HI" ] && printf '%s host:%s\n' "$p" "$p"
+    done
+  fi
+} | awk '!seen[$1]++'

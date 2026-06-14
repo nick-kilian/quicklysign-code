@@ -1,14 +1,22 @@
+# API enablement. Cloud Run and VPC-access APIs are intentionally absent:
+# the control plane runs on a small GCE VM (see docs/architecture.md for why
+# Cloud Run was rejected). Artifact Registry is not needed for this setup.
 locals {
+  # Applied to every label-capable resource so costs are filterable in
+  # billing reports (filter: label app = coder).
+  common_labels = {
+    app = "coder"
+  }
+
   services = [
     "compute.googleapis.com",
-    "run.googleapis.com",
     "sqladmin.googleapis.com",
     "secretmanager.googleapis.com",
-    "artifactregistry.googleapis.com",
     "iam.googleapis.com",
     "cloudresourcemanager.googleapis.com",
-    "vpcaccess.googleapis.com",
-    "servicenetworking.googleapis.com"
+    "servicenetworking.googleapis.com",
+    "logging.googleapis.com",
+    "monitoring.googleapis.com",
   ]
 }
 

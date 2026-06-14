@@ -1,42 +1,44 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# bootstrap-gcp: one-time project preparation before `make deploy-control-plane`.
+# Verifies auth, enables the required APIs. Terraform runs with YOUR
+# Application Default Credentials — no bootstrap service account is needed.
+set -euo pipefail
 
-PROJECT_ID="nick-coder"
-REGION="us-west1"
+PROJECT_ID="${GCP_PROJECT_ID:-quicklysign-terraform-dev}"
 
-echo "🌟 Bootstrapping GCP Project: $PROJECT_ID..."
+echo "Bootstrapping GCP project: $PROJECT_ID"
 
-# 1. Enable APIs
-gcloud services enable \
-  compute.googleapis.com \
-  run.googleapis.com \
-  sqladmin.googleapis.com \
-  secretmanager.googleapis.com \
-  artifactregistry.googleapis.com \
-  iam.googleapis.com \
-  cloudresourcemanager.googleapis.com \
-  vpcaccess.googleapis.com \
-  servicenetworking.googleapis.com \
-  --project "$PROJECT_ID"
-
-echo "✅ APIs enabled."
-
-# 2. Create Terraform Service Account if it doesn't exist
-SA_NAME="coder-terraform"
-SA_EMAIL="$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
-
-if ! gcloud iam service-accounts describe "$SA_EMAIL" --project "$PROJECT_ID" &>/dev/null; then
-    echo "Creating service account: $SA_EMAIL..."
-    gcloud iam service-accounts create "$SA_NAME" \
-      --display-name "Coder Terraform SA" \
-      --project "$PROJECT_ID"
-else
-    echo "✅ Service account $SA_EMAIL already exists."
+if ! command -v gcloud >/dev/null 2>&1; then
+  echo "ERROR: gcloud CLI not installed (https://cloud.google.com/sdk/docs/install)"
+  exit 1
 fi
 
-# 3. Grant Editor role (or more specific roles) to SA
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member "serviceAccount:$SA_EMAIL" \
-  --role "roles/editor"
+if ! gcloud auth list --filter=status:ACTIVE --format='value(account)' | grep -q .; then
+  echo "ERROR: no active gcloud account. Run: gcloud auth login"
+  exit 1
+fi
 
-echo "✅ Bootstrap complete!"
+if ! gcloud projects describe "$PROJECT_ID" >/dev/null 2>&1; then
+  echo "ERROR: project $PROJECT_ID not found or no access."
+  exit 1
+fi
+
+if ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
+  echo "Terraform needs Application Default Credentials. Run:"
+  echo "    gcloud auth application-default login"
+  exit 1
+fi
+
+echo "Enabling APIs (idempotent)..."
+gcloud services enable \
+  compute.googleapis.com \
+  sqladmin.googleapis.com \
+  secretmanager.googleapis.com \
+  iam.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  servicenetworking.googleapis.com \
+  logging.googleapis.com \
+  monitoring.googleapis.com \
+  --project "$PROJECT_ID"
+
+echo "Bootstrap complete. Next: make deploy-control-plane"

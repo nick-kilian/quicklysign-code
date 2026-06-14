@@ -1,15 +1,27 @@
 output "coder_url" {
-  value = var.use_cloud_run ? google_cloud_run_v2_service.coder[0].uri : "http://${google_compute_instance.coder_fallback[0].network_interface[0].access_config[0].nat_ip}"
+  description = "The Coder access URL"
+  value       = "https://${var.coder_hostname}"
 }
 
-output "vpc_id" {
-  value = google_compute_network.vpc.id
+output "control_plane_ip" {
+  description = "Reserved static IP of the control plane VM"
+  value       = google_compute_address.coder.address
 }
 
-output "database_ip" {
+output "dns_record" {
+  description = "DNS record you must create"
+  value       = "${var.coder_hostname}. A ${google_compute_address.coder.address}"
+}
+
+output "database_private_ip" {
   value = google_sql_database_instance.coder.private_ip_address
 }
 
 output "workspace_service_account" {
-  value = google_service_account.coder_workspace.email
+  description = "Attach this SA to workspace VMs (the template's default matches)"
+  value       = google_service_account.coder_workspace.email
+}
+
+output "vpc_name" {
+  value = google_compute_network.vpc.name
 }

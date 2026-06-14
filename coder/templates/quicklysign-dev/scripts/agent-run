@@ -1,62 +1,157 @@
-#!/bin/bash
-# agent-run: Wrapper for starting agent sessions in tmux with metadata
+#!/usr/bin/env bash
+# agent-run: start (or attach to) a named agent work lane.
+#
+#   agent-run claude sharepoint-metadata-sync --repo quicklysign-office-365 --repo quicklysign-python3
+#   agent-run claude trading-refactor --repo quicklysign-python3 --ttl 4h
+#   agent-run codex  scratch-task --repo ~/scratch --no-worktree
+#
+# Worktree-first: any --repo that is a canonical checkout under ~/src gets a
+# per-lane git worktree at ~/lanes/<lane>/<repo> (branch = lane name, created
+# via lane-init). The ~/src clones stay pristine. Multiple --repo flags build
+# a multi-repo lane whose working dir is ~/lanes/<lane>. Use --no-worktree to
+# run directly in a given directory.
+#
+# Claude sessions are named after the lane (resume: `claude --resume <lane>`);
+# Codex resumes with `codex resume --last` from the lane dir. `worklane <lane>`
+# prints these hints for you.
+set -euo pipefail
 
-SESSION_NAME=$1
-AGENT_TYPE=$2
+usage() {
+  echo "Usage: agent-run <claude|codex> <lane-name> [--repo <name-or-path>]... [--ttl <e.g. 4h|90m>] [--no-worktree] [-- <extra agent args>]"
+  exit 1
+}
+
+[ "$#" -ge 2 ] || usage
+AGENT_TYPE="$1"
+LANE="$2"
 shift 2
 
-# Defaults
-REPO_PATH="."
-TTL="4h"
+case "$AGENT_TYPE" in claude|codex) ;; *) echo "Unknown agent type: $AGENT_TYPE"; usage ;; esac
 
-# Simple arg parsing for --repo and --ttl
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --repo) REPO_PATH="$2"; shift ;;
-        --ttl) TTL="$2"; shift ;;
-        *) ARGS+=("$1") ;;
-    esac
-    shift
+REPOS=()
+TTL_RAW=""
+NO_WORKTREE=false
+EXTRA_ARGS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --repo)        REPOS+=("$2"); shift 2 ;;
+    --ttl)         TTL_RAW="$2"; shift 2 ;;
+    --no-worktree) NO_WORKTREE=true; shift ;;
+    --)            shift; EXTRA_ARGS=("$@"); break ;;
+    *)             EXTRA_ARGS+=("$1"); shift ;;
+  esac
+done
+[ "${#REPOS[@]}" -gt 0 ] || REPOS=("$PWD")
+
+# Shared config with the watchdog
+CONFIG_FILE="$HOME/.config/agent-watchdog/config"
+DEFAULT_AGENT_TTL_SECONDS=14400
+MAX_AGENT_TTL_SECONDS=28800
+[ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+
+parse_duration() { # 4h | 90m | 300s | 300 -> seconds
+  local v="$1"
+  case "$v" in
+    *h) echo $(( ${v%h} * 3600 )) ;;
+    *m) echo $(( ${v%m} * 60 )) ;;
+    *s) echo $(( ${v%s} )) ;;
+    *)  echo $(( v )) ;;
+  esac
+}
+
+TTL_SECONDS=$DEFAULT_AGENT_TTL_SECONDS
+[ -n "$TTL_RAW" ] && TTL_SECONDS=$(parse_duration "$TTL_RAW")
+if [ "$TTL_SECONDS" -gt "$MAX_AGENT_TTL_SECONDS" ]; then
+  echo "ttl capped at MAX_AGENT_TTL_SECONDS (${MAX_AGENT_TTL_SECONDS}s)"
+  TTL_SECONDS=$MAX_AGENT_TTL_SECONDS
+fi
+
+resolve_repo() { # name-or-path -> absolute path ("" if not found)
+  local r="$1"
+  if [ -e "$r/.git" ]; then realpath "$r"
+  elif [ -e "$HOME/src/$r/.git" ]; then echo "$HOME/src/$r"
+  elif [ -d "$r" ]; then realpath "$r"
+  else echo ""
+  fi
+}
+
+# Classify repos: canonical ~/src checkouts get worktrees; other paths run as-is.
+CANONICAL=()
+DIRECT=()
+for r in "${REPOS[@]}"; do
+  p=$(resolve_repo "$r")
+  [ -n "$p" ] || { echo "Repo not found: $r (no $HOME/src/$r — run setup-repos?)"; exit 1; }
+  if [ "$NO_WORKTREE" = false ] && [ "$(dirname "$p")" = "$HOME/src" ]; then
+    CANONICAL+=("$(basename "$p")")
+  else
+    DIRECT+=("$p")
+  fi
 done
 
-if [ -z "$SESSION_NAME" ] || [ -z "$AGENT_TYPE" ]; then
-    echo "Usage: agent-run <session-name> <claude|codex> [--repo <path>] [--ttl <duration>]"
+if [ "${#CANONICAL[@]}" -gt 0 ]; then
+  if [ "${#DIRECT[@]}" -gt 0 ]; then
+    echo "ERROR: cannot mix ~/src checkouts (get worktrees) with other paths in one lane."
+    echo "Either pass only repo names/~/src paths, or use --no-worktree."
     exit 1
+  fi
+  lane-init "$LANE" "${CANONICAL[@]}" >/dev/null
+  if [ "${#CANONICAL[@]}" -eq 1 ]; then
+    REPO_PATH="$HOME/lanes/$LANE/${CANONICAL[0]}"
+  else
+    REPO_PATH="$HOME/lanes/$LANE"
+  fi
+  echo "Worktree lane: $REPO_PATH (branch $LANE; ~/src clones untouched)"
+elif [ "${#DIRECT[@]}" -eq 1 ]; then
+  REPO_PATH="${DIRECT[0]}"
+else
+  echo "ERROR: multiple non-checkout paths given; point --repo at one parent directory instead."
+  exit 1
 fi
 
+if tmux has-session -t "=$LANE" 2>/dev/null; then
+  echo "Lane '$LANE' already running — attaching."
+  exec tmux attach-session -t "=$LANE"
+fi
+
+# Record lane metadata for agent-watchdog / agent-status.
 METADATA_DIR="$HOME/.local/share/agent-sessions"
 mkdir -p "$METADATA_DIR"
-METADATA_FILE="$METADATA_DIR/$SESSION_NAME.json"
+jq -n \
+  --arg name "$LANE" \
+  --arg agent "$AGENT_TYPE" \
+  --arg repo "$REPO_PATH" \
+  --arg start_iso "$(date -u +%FT%TZ)" \
+  --argjson start "$(date +%s)" \
+  --argjson ttl "$TTL_SECONDS" \
+  '{name: $name, agent_type: $agent, repo_path: $repo,
+    start_time: $start_iso, start_epoch: $start, ttl_seconds: $ttl,
+    last_output_epoch: $start, last_change_epoch: 0, status: "starting"}' \
+  > "$METADATA_DIR/$LANE.json"
 
-# Expand path
-REPO_PATH=$(realpath "$REPO_PATH")
-
-# Write initial metadata
-cat <<EOF > "$METADATA_FILE"
-{
-  "name": "$SESSION_NAME",
-  "agent_type": "$AGENT_TYPE",
-  "repo_path": "$REPO_PATH",
-  "start_time": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-  "ttl": "$TTL",
-  "status": "starting"
-}
-EOF
-
-# Command to run based on agent type
-if [ "$AGENT_TYPE" == "claude" ]; then
-    AGENT_CMD="claude -n $SESSION_NAME ${ARGS[*]}"
-elif [ "$AGENT_TYPE" == "codex" ]; then
-    AGENT_CMD="codex start $SESSION_NAME ${ARGS[*]}"
+# Build the agent command. printf %q keeps extra args intact through tmux.
+if [ "$AGENT_TYPE" = "claude" ]; then
+  CMD="claude -n $(printf '%q' "$LANE")"
 else
-    echo "Unknown agent type: $AGENT_TYPE"
-    exit 1
+  CMD="codex"
+fi
+for a in ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; do
+  CMD+=" $(printf '%q' "$a")"
+done
+
+tmux new-session -d -s "$LANE" -c "$REPO_PATH"
+# "=$LANE:" = exact session match in pane-target form (bare "=$LANE" only
+# works for session-target commands like has-session/attach)
+tmux send-keys -t "=$LANE:" "$CMD" Enter
+
+echo "Lane '$LANE' started ($AGENT_TYPE in $REPO_PATH, ttl $((TTL_SECONDS / 60))m)."
+if [ "$AGENT_TYPE" = "claude" ]; then
+  echo "Resume after a VM stop:  worklane $LANE   (or, from $REPO_PATH: claude --continue)"
+else
+  echo "Resume after a VM stop:  worklane $LANE   (or: cd $REPO_PATH && codex resume --last)"
 fi
 
-echo "🚀 Starting $AGENT_TYPE session '$SESSION_NAME' in tmux..."
-tmux new-session -d -s "$SESSION_NAME" -c "$REPO_PATH" "$AGENT_CMD"
-
-# Update status to active
-jq ".status = \"active\"" "$METADATA_FILE" > "$METADATA_FILE.tmp" && mv "$METADATA_FILE.tmp" "$METADATA_FILE"
-
-echo "✅ Session started. Use 'worklane $SESSION_NAME' to attach."
+if [ -t 0 ]; then
+  exec tmux attach-session -t "=$LANE"
+else
+  echo "Attach with: worklane $LANE"
+fi

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "quicklysign-python3",
+    "url": "https://github.com/QuicklySign/quicklysign-python3.git",
+    "path": "~/src/quicklysign-python3"
+  },
+  {
+    "name": "quicklysign-monitoring",
+    "url": "https://github.com/QuicklySign/quicklysign-monitoring.git",
+    "path": "~/src/quicklysign-monitoring"
+  },
+  {
+    "name": "quicklysign-ml",
+    "url": "https://github.com/QuicklySign/quicklysign-ml.git",
+    "path": "~/src/quicklysign-ml"
+  },
+  {
+    "name": "quicklysign-office-365",
+    "url": "https://github.com/QuicklySign/quicklysign-office-365.git",
+    "path": "~/src/quicklysign-office-365"
+  },
+  {
+    "name": "quicklysign-conversion-v2",
+    "url": "https://github.com/QuicklySign/quicklysign-conversion-v2.git",
+    "path": "~/src/quicklysign-conversion-v2"
+  }
+]

@@ -1,13 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# open-coder: open the Coder dashboard in the browser.
+set -euo pipefail
 
-PROJECT_ID="nick-coder"
-REGION="us-west1"
+TF_DIR="$(dirname "$0")/../infra/terraform"
+URL=$(terraform -chdir="$TF_DIR" output -raw coder_url 2>/dev/null || echo "https://coder.ragingbucket.com")
 
-CODER_URL=$(gcloud run services describe coder --platform managed --region "$REGION" --project "$PROJECT_ID" --format 'value(status.url)')
-
-if [ -n "$CODER_URL" ]; then
-    echo "🌍 Opening Coder: $CODER_URL"
-    open "$CODER_URL"
-else
-    echo "❌ Coder service not found in Cloud Run."
-fi
+echo "Opening $URL"
+open "$URL" 2>/dev/null || xdg-open "$URL" 2>/dev/null || echo "Open manually: $URL"

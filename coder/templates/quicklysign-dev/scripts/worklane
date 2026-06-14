@@ -1,34 +1,61 @@
-#!/bin/bash
-# worklane: Attach to a session or start a new one in a repo
+#!/usr/bin/env bash
+# worklane: jump into a work lane — cd to its repo, attach (or recreate) its
+# tmux session, and show agent resume hints after a VM stop/start.
+#
+#   worklane trading-refactor
+#   worklane                    # list known lanes
+set -uo pipefail
 
-SESSION_NAME=$1
+SESSIONS_DIR="$HOME/.local/share/agent-sessions"
 
-if [ -z "$SESSION_NAME" ]; then
-    echo "Usage: worklane <session-name>"
-    exit 1
+if [ "$#" -lt 1 ]; then
+  echo "Usage: worklane <lane-name>"
+  echo
+  if ls "$SESSIONS_DIR"/*.json >/dev/null 2>&1; then
+    echo "Known lanes:"
+    for m in "$SESSIONS_DIR"/*.json; do
+      printf "  %-22s %-7s %s\n" "$(jq -r .name "$m")" "$(jq -r .agent_type "$m")" "$(jq -r .repo_path "$m" | sed "s|^$HOME|~|")"
+    done
+  else
+    echo "No lanes yet. Start one with: agent-run claude <lane> --repo ~/src/<repo>"
+  fi
+  exit 0
 fi
 
-METADATA_FILE="$HOME/.local/share/agent-sessions/$SESSION_NAME.json"
+LANE="$1"
+META="$SESSIONS_DIR/$LANE.json"
 
-if [ -f "$METADATA_FILE" ]; then
-    REPO_PATH=$(jq -r '.repo_path' "$METADATA_FILE")
-    AGENT_TYPE=$(jq -r '.agent_type' "$METADATA_FILE")
-    cd "$REPO_PATH" || exit
-    
-    if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-        tmux attach-session -t "$SESSION_NAME"
-    else
-        echo "⚠️ Tmux session '$SESSION_NAME' not found. It might have stopped if the VM restarted."
-        echo "💡 Resume hints:"
-        if [ "$AGENT_TYPE" == "claude" ]; then
-            echo "   claude --resume $SESSION_NAME"
-        elif [ "$AGENT_TYPE" == "codex" ]; then
-            echo "   codex resume $SESSION_NAME"
-        fi
-        
-        # Start a new tmux session in this path for the user to resume
-        tmux new-session -A -s "$SESSION_NAME"
-    fi
-else
-    echo "Unknown worklane: $SESSION_NAME"
+REPO=""
+AGENT=""
+if [ -f "$META" ]; then
+  REPO=$(jq -r '.repo_path // empty' "$META")
+  AGENT=$(jq -r '.agent_type // empty' "$META")
+elif [ -d "$HOME/lanes/$LANE" ]; then
+  REPO="$HOME/lanes/$LANE" # multi-repo feature lane (see lane-init)
+elif [ -d "$HOME/src/$LANE" ]; then
+  REPO="$HOME/src/$LANE" # lane named after a repo: sensible default
 fi
+
+if [ -z "$REPO" ] || [ ! -d "$REPO" ]; then
+  echo "Unknown lane '$LANE' (no metadata, and ~/src/$LANE does not exist)."
+  echo "Run 'worklane' to list lanes, or 'agent-run <claude|codex> $LANE --repo <path>' to create it."
+  exit 1
+fi
+
+if tmux has-session -t "=$LANE" 2>/dev/null; then
+  exec tmux attach-session -t "=$LANE"
+fi
+
+# Session gone — i.e. the VM restarted. Create a fresh shell in the repo and
+# surface the resume commands inside it.
+HINTS="echo ''; echo 'Lane: $LANE (fresh session — the VM restarted)'"
+case "$AGENT" in
+  claude) HINTS+="; echo 'Resume Claude:  claude --continue   (or claude --resume to pick)'" ;;
+  codex)  HINTS+="; echo 'Resume Codex:   codex resume --last'" ;;
+  *)      HINTS+="; echo 'Resume:  claude --continue   or   codex resume --last'" ;;
+esac
+HINTS+="; echo ''"
+
+tmux new-session -d -s "$LANE" -c "$REPO"
+tmux send-keys -t "=$LANE:" "clear; $HINTS" Enter
+exec tmux attach-session -t "=$LANE"

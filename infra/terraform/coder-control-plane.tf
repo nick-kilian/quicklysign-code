@@ -1,103 +1,54 @@
-resource "google_cloud_run_v2_service" "coder" {
-  count    = var.use_cloud_run ? 1 : 0
-  name     = "coder"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
-
-  depends_on = [
-    google_secret_manager_secret_iam_member.control_plane_db_url
-  ]
-
-  template {
-    service_account = google_service_account.coder_control_plane.email
-    timeout         = "3600s" # Max timeout for WebSockets
-
-    containers {
-      image = var.coder_image
-      
-      env {
-        name = "CODER_PG_CONNECTION_URL"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.db_url.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
-        name  = "CODER_HTTP_ADDRESS"
-        value = "0.0.0.0:8080"
-      }
-      env {
-        name  = "CODER_ACCESS_URL"
-        value = google_cloud_run_v2_service.coder[0].uri
-      }
-
-      ports {
-        container_port = 8080
-      }
-
-      resources {
-        limits = {
-          cpu    = "2"
-          memory = "4Gi"
-        }
-      }
-    }
-
-    vpc_access {
-      connector = google_vpc_access_connector.connector.id
-      egress    = "ALL_TRAFFIC"
-    }
-
-    scaling {
-      min_instance_count = 1 # Keep at least one to avoid cold starts and for WebSockets
-    }
-    
-    session_affinity = true
-  }
-}
-
-data "google_project" "project" {}
-
-resource "google_cloud_run_service_iam_member" "public_access" {
-  count    = var.use_cloud_run ? 1 : 0
-  location = google_cloud_run_v2_service.coder[0].location
-  service  = google_cloud_run_v2_service.coder[0].name
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
-
-# Fallback VM logic
-resource "google_compute_instance" "coder_fallback" {
-  count        = var.use_cloud_run ? 0 : 1
+# Coder control plane: a small always-on GCE VM.
+#
+# Cloud Run was evaluated and rejected — Coder requires a static,
+# non-autoscaled control plane holding long-lived WebSocket/DERP relay
+# connections, which Cloud Run severs at its request timeout (max 60 min)
+# and on instance churn. See docs/architecture.md §1 for the full analysis
+# and sources.
+resource "google_compute_instance" "coder" {
   name         = "coder-control-plane"
-  machine_type = "e2-small"
+  machine_type = var.control_plane_machine_type
   zone         = var.zone
+  tags         = ["coder-server"]
+
+  allow_stopping_for_update = true
+
+  labels = local.common_labels
 
   boot_disk {
     initialize_params {
-      image = "debian-cloud/debian-11"
+      image  = "debian-cloud/debian-12"
+      size   = 20
+      type   = "pd-balanced"
+      labels = local.common_labels
     }
   }
 
   network_interface {
     network = google_compute_network.vpc.id
     access_config {
-      # Static IP or Ephemeral for now
+      nat_ip = google_compute_address.coder.address
     }
   }
 
   service_account {
     email  = google_service_account.coder_control_plane.email
-    scopes = ["cloud-platform"]
+    scopes = ["cloud-platform"] # access is constrained by IAM roles, not scopes
   }
 
-  metadata_startup_script = <<-EOT
-    #!/bin/bash
-    curl -L https://coder.com/install.sh | sh
-    export CODER_PG_CONNECTION_URL="postgres://coder:${random_password.db_password.result}@${google_sql_database_instance.coder.private_ip_address}/coder?sslmode=disable"
-    export CODER_HTTP_ADDRESS="0.0.0.0:80"
-    coder server
-  EOT
+  metadata = {
+    google-logging-enabled = "true"
+  }
+
+  # Idempotent: installs Coder + Caddy on first boot, refreshes config
+  # (including the DB URL from Secret Manager) on every boot.
+  metadata_startup_script = templatefile("${path.module}/templates/control-plane-startup.sh.tftpl", {
+    project_id     = var.project_id
+    coder_hostname = var.coder_hostname
+  })
+
+  depends_on = [
+    google_secret_manager_secret_version.db_url,
+    google_secret_manager_secret_iam_member.control_plane_db_url,
+  ]
 }

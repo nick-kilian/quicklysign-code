@@ -1,41 +1,115 @@
-# Agent-Aware Idle Detection
+# Agent-aware idle detection
 
-## Overview
-Coder's built-in inactivity detection monitors SSH, VS Code, and JetBrains sessions. However, long-running agentic tasks (like `claude` or `codex` CLI) may not trigger these activity signals if the human is disconnected.
+## The gap this fills
 
-To prevent premature shutdown of the workspace during agent work, we implement an `agent-watchdog.sh` script.
+Coder's built-in activity bump only counts **connection** activity: SSH, IDE
+sessions, the web terminal. In-workspace background processes explicitly do
+not count ([Coder discussion #18897](https://github.com/coder/coder/discussions/18897)).
+So a Claude Code session grinding through a refactor with no human attached
+would let the workspace hit its 1-hour autostop mid-task.
 
-## Heuristics for "Active Work"
+The fix is `agent-watchdog`, a systemd **user** service on every workspace
+that extends the autostop deadline — but only while agents are doing useful
+work.
 
-A session is considered **Active** if any of the following are true within the configured windows:
+## Signals (best to worst)
 
-1.  **Terminal Output**: The tmux pane associated with the agent session has received new output in the last `ACTIVE_OUTPUT_WINDOW_SECONDS` (default: 180s).
-2.  **File Activity**: Any files in the workspace (excluding `.git`, `node_modules`, `__pycache__`) have been modified in the last `ACTIVE_FILE_CHANGE_WINDOW_SECONDS` (default: 300s).
-3.  **Active Processes**: Child processes associated with common dev tasks are running (e.g., `npm`, `pytest`, `uv`, `go test`, `docker`).
-4.  **Grace Period**: If an agent is "Waiting for Input", it is granted a `WAITING_FOR_INPUT_GRACE_SECONDS` (default: 180s) before it is considered idle.
+1. **Agent lifecycle hooks** (precise, event-driven):
+   - *Claude Code*: hooks in `~/.claude/settings.json` —
+     `UserPromptSubmit`/`PreToolUse`/`PostToolUse` → **working**;
+     `Stop`/`Notification` → **waiting for input**; `SessionEnd` → idle.
+   - *Codex*: `notify` in `~/.codex/config.toml` fires on
+     `agent-turn-complete` → **waiting**. (Codex has no "started working"
+     notify; it falls back to the heuristics below for the working signal.)
+   - Both call `agent-activity-hook`, which writes
+     `~/.local/share/agent-sessions/signals/<cwd-key>.state` (+ an
+     `.activity` timestamp file).
+2. **tmux pane content change**: hash of `tmux capture-pane` differs between
+   watchdog ticks.
+3. **Busy child processes** in the lane's pane: `pytest|npm|pnpm|uv|docker|
+   make|cargo|tsc|jest|vitest|…`. Bare `node`/`python` are deliberately
+   excluded — the agents and their MCP servers run on those and would read as
+   permanently busy.
+4. **Recent file changes** in the lane's repo (`.git`, `node_modules`,
+   `.venv`, `__pycache__` pruned).
 
-## Mechanism
+"A tmux session exists" is **not** a signal.
 
-### `agent-run`
-A wrapper script that:
-- Starts the agent in a named tmux session.
-- Writes metadata to `~/.local/share/agent-sessions/<name>.json`.
-- Records the start time and requested TTL.
+## Decision rules (per lane, every tick)
 
-### `agent-watchdog.sh`
-A background service (systemd user unit) that:
-- Iterates through all registered sessions in `~/.local/share/agent-sessions/`.
-- Inspects the corresponding tmux pane for recent activity (using `tmux capture-pane` and checksums or timestamps).
-- If active, executes `coder schedule extend 45m`.
-- If a session exceeds its `MAX_AGENT_TTL_SECONDS` (default: 8h), it stops bumping the deadline.
+```
+tmux session gone                  -> finished  (never bumps)
+now - start > ttl_seconds          -> expired   (never bumps; hard cost cap)
+hook says "waiting":
+    within grace window            -> waiting-grace  (still bumps)
+    busy children or file changes  -> active         (work outlasted the prompt)
+    otherwise                      -> waiting        (stops bumping)
+hook says "working" recently       -> active
+pane changed / files changed /
+busy children within windows       -> active
+otherwise                          -> idle           (stops bumping)
+```
 
-## Configuration Defaults
+If **any** lane is active (or in waiting-grace), the watchdog checks the
+workspace deadline via `coder list --output json` and, when less than the
+bump amount remains, runs:
+
+```
+coder schedule extend <workspace> 45m
+```
+
+This is the current supported CLI mechanism (verified June 2026; alias of the
+older `override-stop`; equivalent API: `PUT /api/v2/workspaces/{id}/extend`).
+The deadline therefore hovers ≤45 min ahead while work continues and runs out
+naturally when it stops. Decisions are logged to
+`~/.local/state/agent-watchdog.log`.
+
+### Authentication
+
+The template injects `data.coder_workspace_owner.me.session_token` (an
+owner-scoped token, regenerated on every workspace start) into
+`~/.config/agent-watchdog/env` (mode 0600), which the systemd unit reads.
+Agent tokens (`CODER_AGENT_TOKEN`) cannot call the user-level extend
+endpoint, so this is the supported path.
+
+## Configuration
+
+Defaults live in `agent-watchdog.sh`; override any of them in
+`~/.config/agent-watchdog/config` (plain shell, persists on the disk):
+
 ```bash
-ACTIVE_OUTPUT_WINDOW_SECONDS=180
-ACTIVE_FILE_CHANGE_WINDOW_SECONDS=300
-WAITING_FOR_INPUT_GRACE_SECONDS=180
-DEFAULT_AGENT_TTL_SECONDS=14400 # 4 hours
-MAX_AGENT_TTL_SECONDS=28800     # 8 hours
+ACTIVE_OUTPUT_WINDOW_SECONDS=180     # output within 3 min  => active
+ACTIVE_FILE_CHANGE_WINDOW_SECONDS=300 # file change within 5 min => active
+WAITING_FOR_INPUT_GRACE_SECONDS=180  # waiting gets 3 min grace
+DEFAULT_AGENT_TTL_SECONDS=14400      # 4 h default lane TTL
+MAX_AGENT_TTL_SECONDS=28800          # 8 h hard cap (agent-run clamps to this)
 WATCHDOG_INTERVAL_SECONDS=60
 AUTOSTOP_BUMP_MINUTES=45
 ```
+
+## Lifecycle example
+
+1. `agent-run claude trading-refactor --repo ~/src/quicklysign-python3 --ttl 4h`
+2. You disconnect. Claude keeps working → hooks fire → watchdog bumps the
+   deadline whenever <45 min remain.
+3. Claude finishes and asks a question → `Stop` hook → waiting; 3 min grace
+   passes → lane stops bumping.
+4. No other activity → deadline expires → Coder stops the workspace (VM
+   deleted, disk persists).
+5. Later: `coder start`, then `worklane trading-refactor` → fresh tmux session
+   with the hint `claude --resume trading-refactor`. Codex lanes:
+   `codex resume --last` from the repo directory.
+
+## Known limitations (deliberate trade-offs)
+
+- Signals are keyed by the lane's working directory; two lanes in the same
+  repo directory share hook signals (use separate worktrees if that matters).
+- Codex "working" detection is heuristic-only (no start-of-turn notify); in
+  the worst case an actively-working-but-silent Codex lane is treated as
+  waiting after the grace period.
+- tmux-resurrect/continuum (optional, see `.tmux.conf`) restore *layouts*
+  only — never running agent processes. The durable mechanism is agent resume
+  plus the metadata under `~/.local/share/agent-sessions/`.
+- If the watchdog dies, systemd restarts it; if it stays dead, the workspace
+  simply autostops on Coder's normal schedule — the failure mode is "stops
+  too early", never "runs forever". The TTL cap bounds the opposite risk.

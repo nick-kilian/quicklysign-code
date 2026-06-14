@@ -1,0 +1,12 @@
+[
+  {
+    "name": "example-repo",
+    "url": "https://github.com/YOUR-ORG/example-repo.git",
+    "path": "~/src/example-repo"
+  },
+  {
+    "name": "another-repo",
+    "url": "https://github.com/YOUR-ORG/another-repo.git",
+    "path": "~/src/another-repo"
+  }
+]

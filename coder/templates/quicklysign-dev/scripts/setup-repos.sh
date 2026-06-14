@@ -1,44 +1,50 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# setup-repos: clone the QuicklySign repos listed in repos.json.
+# Safe to run repeatedly; skips repos that already exist and degrades
+# gracefully when GitHub auth or the config file is missing.
+set -uo pipefail
 
-echo "📂 Checking repository configuration..."
+CONFIG="${1:-$HOME/.config/quicklysign/repos.json}"
 
-REPO_CONFIG="/home/coder/repos.json"
-
-if [ ! -f "$REPO_CONFIG" ]; then
-    echo "⚠️  No repos.json found at $REPO_CONFIG."
-    echo "💡 To automate repository cloning, create $REPO_CONFIG with the following structure:"
-    echo '   ['
-    echo '     {'
-    echo '       "name": "your-repo-name",'
-    echo '       "url": "git@github.com:your-org/your-repo.git",'
-    echo '       "path": "~/src/your-repo-name"'
-    echo '     }'
-    echo '   ]'
-    echo "⏭️  Skipping automatic repository setup."
-    exit 0
+if [ ! -f "$CONFIG" ]; then
+  echo "No repo config found at $CONFIG."
+  echo "Copy repos.example.json there (or push an updated template) to enable cloning."
+  exit 0
 fi
 
-echo "🚀 Parsing $REPO_CONFIG and cloning repositories..."
-
-mkdir -p ~/src
-
-if command -v jq &> /dev/null; then
-    jq -c '.[]' "$REPO_CONFIG" | while read -r repo; do
-        NAME=$(echo "$repo" | jq -r '.name')
-        URL=$(echo "$repo" | jq -r '.url')
-        PATH_RAW=$(echo "$repo" | jq -r '.path')
-        # Expand ~ to $HOME
-        TARGET_PATH="${PATH_RAW/#\~/$HOME}"
-
-        if [ ! -d "$TARGET_PATH" ]; then
-            echo "📥 Cloning $NAME into $TARGET_PATH..."
-            git clone "$URL" "$TARGET_PATH" || echo "❌ Failed to clone $NAME (check SSH keys or URL)"
-        else
-            echo "✅ $NAME already exists at $TARGET_PATH"
-        fi
-    done
-else
-    echo "❌ jq not found, skipping repo auto-setup."
+if ! command -v gh >/dev/null 2>&1; then
+  echo "GitHub CLI (gh) not installed yet; skipping repo setup."
+  exit 0
 fi
 
-echo "✅ Repository setup phase complete."
+if ! gh auth status >/dev/null 2>&1; then
+  echo "Not authenticated to GitHub. To clone the QuicklySign repos, run:"
+  echo "    gh auth login        # one-time; stored on the persistent disk"
+  echo "    setup-repos          # then re-run this"
+  exit 0
+fi
+
+# Let git use gh's credentials for HTTPS clones (idempotent).
+gh auth setup-git >/dev/null 2>&1 || true
+
+mkdir -p "$HOME/src"
+failures=0
+
+jq -c '.[]' "$CONFIG" | while read -r repo; do
+  name=$(jq -r '.name' <<<"$repo")
+  url=$(jq -r '.url' <<<"$repo")
+  raw_path=$(jq -r '.path' <<<"$repo")
+  target="${raw_path/#\~/$HOME}"
+
+  if [ -d "$target/.git" ]; then
+    echo "ok:      $name (already cloned)"
+  else
+    echo "cloning: $name -> $target"
+    if ! git clone --quiet "$url" "$target"; then
+      echo "FAILED:  $name (check access to $url)"
+      failures=$((failures + 1))
+    fi
+  fi
+done
+
+echo "Repo setup complete."

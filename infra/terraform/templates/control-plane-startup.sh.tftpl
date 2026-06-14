@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Control plane bootstrap. Runs as root on every boot; all steps are idempotent.
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+# GCE startup scripts run as root with no $HOME; Coder's install.sh requires it.
+export HOME=/root
+
+log() { echo "[coder-bootstrap] $*"; }
+
+apt-get update -qq
+apt-get install -y -qq curl jq gnupg apt-transport-https debian-keyring debian-archive-keyring
+
+# --- Caddy (TLS termination, automatic Let's Encrypt certificates) ---
+if ! command -v caddy >/dev/null 2>&1; then
+  log "installing caddy"
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+    | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+    > /etc/apt/sources.list.d/caddy-stable.list
+  apt-get update -qq
+  apt-get install -y -qq caddy
+fi
+
+# --- Coder server (official install script: deb package + systemd unit) ---
+if ! command -v coder >/dev/null 2>&1; then
+  log "installing coder"
+  curl -fsSL https://coder.com/install.sh | sh
+fi
+
+# --- Fetch the DB connection URL from Secret Manager (never in metadata) ---
+log "fetching database URL from Secret Manager"
+ACCESS_TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | jq -r .access_token)
+DB_URL=$(curl -sf -H "Authorization: Bearer $ACCESS_TOKEN" \
+  "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/coder-db-url/versions/latest:access" \
+  | jq -r .payload.data | base64 -d)
+
+if [ -z "$DB_URL" ]; then
+  log "ERROR: could not read coder-db-url secret; coder will not start correctly"
+  exit 1
+fi
+
+# --- Coder server configuration (read by the packaged coder.service unit) ---
+mkdir -p /etc/coder.d
+cat > /etc/coder.d/coder.env <<EOF
+CODER_HTTP_ADDRESS=127.0.0.1:3000
+CODER_ACCESS_URL=https://${coder_hostname}
+CODER_PG_CONNECTION_URL=$DB_URL
+EOF
+chmod 600 /etc/coder.d/coder.env
+
+# --- Caddy reverse proxy with automatic HTTPS ---
+cat > /etc/caddy/Caddyfile <<EOF
+${coder_hostname} {
+	reverse_proxy 127.0.0.1:3000
+}
+EOF
+
+systemctl enable coder caddy
+systemctl restart coder caddy
+log "done — coder should be reachable at https://${coder_hostname} once DNS resolves"

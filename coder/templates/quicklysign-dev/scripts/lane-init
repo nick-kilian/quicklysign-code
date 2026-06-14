@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# lane-init: scaffold a multi-repo feature lane — one parent directory holding
+# a git worktree of each repo, all on the same feature branch.
+#
+#   lane-init sharepoint-metadata-sync quicklysign-office-365 quicklysign-python3
+#   agent-run claude sharepoint-metadata-sync --repo ~/lanes/sharepoint-metadata-sync
+#
+# Branch = lane name (override with --branch). If the branch already exists
+# locally or on origin it is checked out; otherwise it is created from the
+# repo's default branch. Repos may be bare names (resolved under ~/src) or paths.
+#
+# Tear down a finished lane:
+#   git -C ~/src/<repo> worktree remove ~/lanes/<lane>/<repo>   (per repo)
+#   rm -rf ~/lanes/<lane>
+set -euo pipefail
+
+usage() {
+  echo "Usage: lane-init <lane-name> <repo> [<repo>...] [--branch <name>]"
+  exit 1
+}
+
+[ "$#" -ge 2 ] || usage
+LANE="$1"; shift
+
+BRANCH=""
+REPOS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --branch) BRANCH="$2"; shift 2 ;;
+    *) REPOS+=("$1"); shift ;;
+  esac
+done
+[ "${#REPOS[@]}" -ge 1 ] || usage
+BRANCH="${BRANCH:-$LANE}"
+
+LANE_DIR="$HOME/lanes/$LANE"
+mkdir -p "$LANE_DIR"
+
+# Gitignored dev files (secrets, local config) don't propagate into worktrees;
+# copy them from the canonical checkout into each lane. Real copies, not
+# symlinks — Docker bind mounts don't follow symlinks outside the mount.
+# Built-ins below; add more as "<repo-name> <relative-path>" lines in
+# ~/.config/quicklysign/lane-link-files. The ~/src copy is the source of
+# truth; re-run lane-init after changing it to refresh existing lanes.
+link_dev_files() { # <canonical-src> <worktree-dest>
+  local src="$1" dest="$2" name repo rel
+  name=$(basename "$src")
+  {
+    echo "quicklysign-python3 quicklysign/dev_secrets.py"
+    cat "$HOME/.config/quicklysign/lane-link-files" 2>/dev/null || true
+  } | while read -r repo rel; do
+    [ "$repo" = "$name" ] && [ -n "$rel" ] || continue
+    # replace if: missing, content drifted, or a symlink (cmp follows links,
+    # so it must be checked explicitly — Docker can't mount symlinks)
+    if [ -e "$src/$rel" ] && { [ -L "$dest/$rel" ] || ! cmp -s "$src/$rel" "$dest/$rel" 2>/dev/null; }; then
+      mkdir -p "$(dirname "$dest/$rel")"
+      rm -f "$dest/$rel" # may be a stale symlink or outdated copy
+      install -m 600 "$src/$rel" "$dest/$rel"
+      echo "copied:   $name/$rel (gitignored dev file)"
+    fi
+  done
+}
+
+for repo in "${REPOS[@]}"; do
+  if [ -d "$repo/.git" ]; then
+    src=$(realpath "$repo")
+  elif [ -d "$HOME/src/$repo/.git" ]; then
+    src="$HOME/src/$repo"
+  else
+    echo "ERROR: repo not found: $repo (no $HOME/src/$repo — run setup-repos?)"
+    exit 1
+  fi
+  name=$(basename "$src")
+  dest="$LANE_DIR/$name"
+
+  if [ -e "$dest" ]; then
+    echo "ok:       $name (worktree already exists)"
+    link_dev_files "$src" "$dest"
+    continue
+  fi
+
+  git -C "$src" fetch --quiet origin "$BRANCH" 2>/dev/null || true
+
+  if git -C "$src" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+    echo "worktree: $name -> $dest (existing local branch $BRANCH)"
+    git -C "$src" worktree add "$dest" "$BRANCH"
+  elif git -C "$src" show-ref --verify --quiet "refs/remotes/origin/$BRANCH"; then
+    echo "worktree: $name -> $dest (tracking origin/$BRANCH)"
+    git -C "$src" worktree add --track -b "$BRANCH" "$dest" "origin/$BRANCH"
+  else
+    echo "worktree: $name -> $dest (new branch $BRANCH)"
+    git -C "$src" worktree add -b "$BRANCH" "$dest"
+  fi
+  link_dev_files "$src" "$dest"
+done
+
+echo
+echo "Lane scaffolded: $LANE_DIR"
+echo "Start the agent lane with:"
+echo "  agent-run claude $LANE --repo ~/lanes/$LANE"

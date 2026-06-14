@@ -1,5 +1,13 @@
+# The Postgres connection URL lives only in Secret Manager. The control plane
+# VM fetches it at boot with its service account — it is never written to
+# instance metadata or Terraform-rendered startup scripts.
+#
+# sslmode=disable is acceptable here because the connection rides the private
+# VPC peering to Cloud SQL's private IP and never crosses the public internet.
 resource "google_secret_manager_secret" "db_url" {
   secret_id = "coder-db-url"
+  labels    = local.common_labels
+
   replication {
     user_managed {
       replicas {
@@ -7,10 +15,12 @@ resource "google_secret_manager_secret" "db_url" {
       }
     }
   }
+
+  depends_on = [google_project_service.services]
 }
 
 resource "google_secret_manager_secret_version" "db_url" {
-  secret = google_secret_manager_secret.db_url.id
+  secret      = google_secret_manager_secret.db_url.id
   secret_data = "postgres://coder:${random_password.db_password.result}@${google_sql_database_instance.coder.private_ip_address}/coder?sslmode=disable"
 }
 
