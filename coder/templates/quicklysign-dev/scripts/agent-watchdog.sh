@@ -14,7 +14,9 @@
 #   * known busy child processes (pytest, npm, docker, ...) are running in it
 #   * files in its repo changed within ACTIVE_FILE_CHANGE_WINDOW
 # A lane whose agent reported "waiting for input" gets WAITING_FOR_INPUT_GRACE
-# of continued bumping, then stops counting. A lane past its TTL never bumps.
+# of continued bumping, then stops counting. TTL is an INACTIVITY timeout (not
+# a lifetime cap): a lane stops counting after TTL seconds with no work, and
+# revives the moment work resumes — active work is never force-stopped.
 #
 # While any lane is active, the Coder autostop deadline is extended with
 # `coder schedule extend <workspace> <minutes>m` whenever the remaining time
@@ -32,8 +34,8 @@ CONFIG_FILE="$HOME/.config/agent-watchdog/config"
 ACTIVE_OUTPUT_WINDOW_SECONDS=180
 ACTIVE_FILE_CHANGE_WINDOW_SECONDS=300
 WAITING_FOR_INPUT_GRACE_SECONDS=180
-DEFAULT_AGENT_TTL_SECONDS=14400
-MAX_AGENT_TTL_SECONDS=28800
+DEFAULT_AGENT_TTL_SECONDS=3600   # inactivity timeout (reset on activity), 1h
+MAX_AGENT_TTL_SECONDS=14400      # ceiling for per-lane --ttl overrides
 WATCHDOG_INTERVAL_SECONDS=60
 AUTOSTOP_BUMP_MINUTES=45
 
@@ -127,18 +129,16 @@ while true; do
     lane=$(basename "$meta" .json)
     status=$(jq -r '.status // "unknown"' "$meta")
     repo=$(jq -r '.repo_path // empty' "$meta")
-    start=$(jq -r '.start_epoch // 0' "$meta")
     ttl=$(jq -r ".ttl_seconds // $DEFAULT_AGENT_TTL_SECONDS" "$meta")
+    # TTL is an INACTIVITY timeout: last_active_epoch is bumped to now on every
+    # active tick (below), so a lane only expires after `ttl` seconds with no
+    # work — and revives the moment activity resumes. Falls back to start_epoch
+    # before the first activity tick records last_active_epoch.
+    last_active=$(jq -r '.last_active_epoch // .start_epoch // 0' "$meta")
 
     # Lane's tmux session is gone -> finished.
     if ! tmux has-session -t "=$lane" 2>/dev/null; then
       [ "$status" != "finished" ] && { meta_set "$meta" '.status = "finished"'; log "$lane: finished (tmux session gone)"; }
-      continue
-    fi
-
-    # Hard TTL cap: never bump past it, regardless of activity.
-    if [ $((now - start)) -gt "$ttl" ]; then
-      [ "$status" != "expired" ] && { meta_set "$meta" '.status = "expired"'; log "$lane: TTL expired (${ttl}s) — no longer extending autostop"; }
       continue
     fi
 
@@ -187,15 +187,18 @@ while true; do
       active|waiting-grace)
         any_active=true
         [ "$status" != "active" ] && log "$lane: active (hook=$hook_state pane=$pane_act files=$files_recent busy=$busy)"
-        meta_set "$meta" '.status = "active"'
+        # Activity resets the inactivity clock (and revives an expired lane).
+        meta_set "$meta" ".status = \"active\" | .last_active_epoch = $now"
         ;;
-      waiting)
-        [ "$status" != "waiting" ] && log "$lane: waiting for input past grace — not extending autostop"
-        meta_set "$meta" '.status = "waiting"'
-        ;;
-      idle)
-        [ "$status" != "idle" ] && log "$lane: idle — not extending autostop"
-        meta_set "$meta" '.status = "idle"'
+      waiting | idle)
+        inactive=$((now - last_active))
+        if [ "$inactive" -gt "$ttl" ]; then
+          [ "$status" != "expired" ] && { meta_set "$meta" '.status = "expired"'; log "$lane: idle ${inactive}s > ttl ${ttl}s — not extending (revives on activity)"; }
+        elif [ "$state" = "waiting" ]; then
+          [ "$status" != "waiting" ] && { meta_set "$meta" '.status = "waiting"'; log "$lane: waiting for input past grace — not extending autostop"; }
+        else
+          [ "$status" != "idle" ] && { meta_set "$meta" '.status = "idle"'; log "$lane: idle — not extending autostop"; }
+        fi
         ;;
     esac
   done

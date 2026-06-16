@@ -45,8 +45,8 @@ done
 
 # Shared config with the watchdog
 CONFIG_FILE="$HOME/.config/agent-watchdog/config"
-DEFAULT_AGENT_TTL_SECONDS=14400
-MAX_AGENT_TTL_SECONDS=28800
+DEFAULT_AGENT_TTL_SECONDS=3600    # TTL = inactivity timeout (watchdog resets it on activity), 1h
+MAX_AGENT_TTL_SECONDS=14400       # ceiling for --ttl
 [ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
 
 parse_duration() { # 4h | 90m | 300s | 300 -> seconds

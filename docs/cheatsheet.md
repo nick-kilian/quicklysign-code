@@ -53,7 +53,7 @@ setup-repos                       # (re)clone the repos from repos.json into ~/s
 list-app-ports                    # what `make forward` would mirror
 ```
 
-Flags for `agent-run`: `--repo` (repeatable), `--ttl <4h|90m|300s>` (default 4h, max 8h), `--no-worktree`, `-- <extra agent args>`.
+Flags for `agent-run`: `--repo` (repeatable), `--ttl <1h|90m|300s>` (default 1h, max 4h — an **inactivity** timeout the watchdog resets on activity, not a lifetime cap), `--no-worktree`, `-- <extra agent args>`.
 
 ## Resuming agents (after a stop / restart / Spot preemption)
 
@@ -78,7 +78,7 @@ tmux ls      list sessions
 
 ## Idle / autostop (the watchdog)
 
-While a lane is **active** (agent hooks, terminal output, file changes, busy children) the watchdog extends the autostop deadline. Idle/waiting → 3-min grace, then it stops extending and the workspace autostops.
+While a lane is **active** (agent hooks, terminal output, file changes, busy children) the watchdog extends the autostop deadline. Idle/waiting → 3-min grace, then it stops extending and the workspace autostops. The lane TTL is an **inactivity timeout** (default 1h): it resets on every active tick, so active work is never force-stopped; a lane only expires after 1h idle (and revives the moment work resumes).
 
 **An open SSH/Warp connection does NOT keep the workspace alive** (template `activity_bump = 0`). Only active agent work extends it. For hands-on (non-agent) work, run in a lane or `coder schedule extend quicklysign-dev 2h`.
 

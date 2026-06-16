@@ -58,7 +58,7 @@ an agent lane or bump manually: `coder schedule extend quicklysign-dev 2h`.
 
 ```
 tmux session gone                  -> finished  (never bumps)
-now - start > ttl_seconds          -> expired   (never bumps; hard cost cap)
+now - last_active > ttl_seconds    -> expired   (inactivity timeout; revives on activity)
 hook says "waiting":
     within grace window            -> waiting-grace  (still bumps)
     busy children or file changes  -> active         (work outlasted the prompt)
@@ -100,8 +100,8 @@ Defaults live in `agent-watchdog.sh`; override any of them in
 ACTIVE_OUTPUT_WINDOW_SECONDS=180     # output within 3 min  => active
 ACTIVE_FILE_CHANGE_WINDOW_SECONDS=300 # file change within 5 min => active
 WAITING_FOR_INPUT_GRACE_SECONDS=180  # waiting gets 3 min grace
-DEFAULT_AGENT_TTL_SECONDS=14400      # 4 h default lane TTL
-MAX_AGENT_TTL_SECONDS=28800          # 8 h hard cap (agent-run clamps to this)
+DEFAULT_AGENT_TTL_SECONDS=3600       # INACTIVITY timeout (reset on activity), 1 h
+MAX_AGENT_TTL_SECONDS=14400          # ceiling for per-lane --ttl overrides
 WATCHDOG_INTERVAL_SECONDS=60
 AUTOSTOP_BUMP_MINUTES=45
 ```
