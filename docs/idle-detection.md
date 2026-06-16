@@ -74,22 +74,27 @@ workspace deadline via `coder list --output json` and, when less than the
 bump amount remains, runs:
 
 ```
-coder schedule extend <workspace> 45m
+coder schedule extend <workspace> 60m
 ```
 
 This is the current supported CLI mechanism (verified June 2026; alias of the
 older `override-stop`; equivalent API: `PUT /api/v2/workspaces/{id}/extend`).
-The deadline therefore hovers ≤45 min ahead while work continues and runs out
-naturally when it stops. Decisions are logged to
+The deadline therefore hovers ≤60 min ahead while work continues and runs out
+naturally when it stops — so the bump window doubles as the idle grace: work
+stops, the workspace coasts ~1 h, then autostops. Decisions are logged to
 `~/.local/state/agent-watchdog.log`.
 
 ### Authentication
 
-The template injects `data.coder_workspace_owner.me.session_token` (an
-owner-scoped token, regenerated on every workspace start) into
-`~/.config/agent-watchdog/env` (mode 0600), which the systemd unit reads.
-Agent tokens (`CODER_AGENT_TOKEN`) cannot call the user-level extend
-endpoint, so this is the supported path.
+At boot the startup script mints a **long-lived Coder API token** (server max
+168h/7d) using the freshly-injected owner session token, persists it to
+`~/.config/agent-watchdog/api-token`, and writes it into
+`~/.config/agent-watchdog/env` (mode 0600) for the systemd unit; it is reused
+across boots until it stops validating. The short-lived owner session token is
+only an initial fallback — it is OIDC-session-bound and expired ~13 h into
+uptime, which silently broke `coder schedule extend` and autostopped the
+workspace with active sessions. Agent tokens (`CODER_AGENT_TOKEN`) cannot call
+the user-level extend endpoint, so a user/API token is required.
 
 ## Configuration
 
@@ -103,14 +108,14 @@ WAITING_FOR_INPUT_GRACE_SECONDS=180  # waiting gets 3 min grace
 DEFAULT_AGENT_TTL_SECONDS=3600       # INACTIVITY timeout (reset on activity), 1 h
 MAX_AGENT_TTL_SECONDS=14400          # ceiling for per-lane --ttl overrides
 WATCHDOG_INTERVAL_SECONDS=60
-AUTOSTOP_BUMP_MINUTES=45
+AUTOSTOP_BUMP_MINUTES=60
 ```
 
 ## Lifecycle example
 
 1. `agent-run claude trading-refactor --repo ~/src/quicklysign-python3 --ttl 4h`
 2. You disconnect. Claude keeps working → hooks fire → watchdog bumps the
-   deadline whenever <45 min remain.
+   deadline whenever <60 min remain.
 3. Claude finishes and asks a question → `Stop` hook → waiting; 3 min grace
    passes → lane stops bumping.
 4. No other activity → deadline expires → Coder stops the workspace (VM

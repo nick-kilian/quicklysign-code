@@ -37,7 +37,11 @@ WAITING_FOR_INPUT_GRACE_SECONDS=180
 DEFAULT_AGENT_TTL_SECONDS=3600   # inactivity timeout (reset on activity), 1h
 MAX_AGENT_TTL_SECONDS=14400      # ceiling for per-lane --ttl overrides
 WATCHDOG_INTERVAL_SECONDS=60
-AUTOSTOP_BUMP_MINUTES=45
+# The bump window IS the effective idle grace: when active the deadline is kept
+# this far ahead, so when work stops the workspace coasts this long before
+# autostopping. Keep it aligned with the 1h inactivity TTL so coming back within
+# the hour re-extends (a 45m window stopped a lane idle-then-resumed at ~47m).
+AUTOSTOP_BUMP_MINUTES=60
 
 [ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
 mkdir -p "$SESSIONS_DIR" "$SIGNALS_DIR" "$RUNTIME_DIR" "$(dirname "$LOG_FILE")"
