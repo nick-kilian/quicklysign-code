@@ -122,8 +122,10 @@ resource "coder_agent" "main" {
     # --- repo configuration (source of truth lives in the template) ---
     echo '${base64encode(file("${path.module}/repos.json"))}' | base64 -d > "$HOME/.config/quicklysign/repos.json"
 
-    # --- credentials for the watchdog (owner-scoped session token; Coder
-    #     regenerates it on every workspace start) ---
+    # --- watchdog credentials: initial fallback ---
+    # Short-lived owner session token, written early so the watchdog always has
+    # *something*. Upgraded to a long-lived API token after install-agent-tools
+    # below (once the coder CLI exists).
     umask 077
     printf '%s\n' \
       'CODER_URL=${data.coder_workspace.me.access_url}' \
@@ -136,7 +138,31 @@ resource "coder_agent" "main" {
     install-agent-tools 2>&1 | tee -a "$HOME/.local/state/install-agent-tools.log"
     setup-repos         2>&1 | tee -a "$HOME/.local/state/setup-repos.log" || true
 
-    # Pick up the fresh session token after every (re)start.
+    # --- upgrade the watchdog credential to a long-lived API token ---
+    # The injected owner session token (written above) is short-lived: it
+    # expired mid-session, `coder schedule extend` then failed, and the
+    # workspace autostopped with active Claude sessions. Now that the coder CLI
+    # exists (install-agent-tools, above) and the session token is still fresh,
+    # mint a long-lived token (server max 168h/7d) for the watchdog, persist it
+    # on the disk, and reuse it across boots until it stops validating. If
+    # minting is unavailable, the session-token env written above stands.
+    umask 077
+    LL_FILE="$HOME/.config/agent-watchdog/api-token"
+    if ! { [ -s "$LL_FILE" ] && CODER_SESSION_TOKEN="$(cat "$LL_FILE")" coder whoami >/dev/null 2>&1; }; then
+      CODER_SESSION_TOKEN='${data.coder_workspace_owner.me.session_token}' coder tokens remove "watchdog-${data.coder_workspace.me.name}" >/dev/null 2>&1 || true
+      _tok=$(CODER_SESSION_TOKEN='${data.coder_workspace_owner.me.session_token}' coder tokens create --lifetime 168h --name "watchdog-${data.coder_workspace.me.name}" 2>/dev/null | tail -1 || true)
+      [ -n "$_tok" ] && printf '%s' "$_tok" > "$LL_FILE"
+    fi
+    if [ -s "$LL_FILE" ]; then
+      printf '%s\n' \
+        'CODER_URL=${data.coder_workspace.me.access_url}' \
+        "CODER_SESSION_TOKEN=$(cat "$LL_FILE")" \
+        'CODER_WORKSPACE_NAME=${data.coder_workspace.me.name}' \
+        > "$HOME/.config/agent-watchdog/env"
+    fi
+    umask 022
+
+    # Pick up the refreshed credential after every (re)start.
     XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user restart agent-watchdog.service || true
   EOT
 
