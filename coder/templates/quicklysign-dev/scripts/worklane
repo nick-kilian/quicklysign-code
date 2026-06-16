@@ -46,8 +46,19 @@ if tmux has-session -t "=$LANE" 2>/dev/null; then
   exec tmux attach-session -t "=$LANE"
 fi
 
-# Session gone — i.e. the VM restarted. Create a fresh shell in the repo and
-# surface the resume commands inside it.
+# Session gone — i.e. the VM restarted. Reattaching starts a NEW work session,
+# so reset the lane's TTL clock: the watchdog's TTL cap is measured from
+# start_epoch, and that metadata persists on the disk across restarts. Without
+# this, reattaching an old lane lands it past its cost-cap and the watchdog
+# (the sole keeper under activity_bump=0) refuses to extend it. Reset to now.
+if [ -f "$META" ] && command -v jq >/dev/null 2>&1; then
+  now=$(date +%s); iso=$(date -u +%FT%TZ); tmp=$(mktemp)
+  if jq --argjson n "$now" --arg iso "$iso" \
+       '.start_epoch=$n | .start_time=$iso | .last_output_epoch=$n | .status="starting"' \
+       "$META" >"$tmp" 2>/dev/null; then mv "$tmp" "$META"; else rm -f "$tmp"; fi
+fi
+
+# Create a fresh shell in the repo and surface the resume commands inside it.
 HINTS="echo ''; echo 'Lane: $LANE (fresh session — the VM restarted)'"
 case "$AGENT" in
   claude) HINTS+="; echo 'Resume Claude:  claude --continue   (or claude --resume to pick)'" ;;
