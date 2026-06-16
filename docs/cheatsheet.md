@@ -102,6 +102,8 @@ DEV_PORT_LO=8000 ssh quicklysign-dev.coder list-app-ports   # raise the host-lis
 `ssh quicklysign-dev.coder` (plain) → accept **"Install Warp's SSH extension"** → then `worklane`.
 Settings → Warpify: keep **"Use Tmux Warpification" OFF** (it breaks here). Verify: `ls -d ~/.warp/remote-server`.
 
+**Paste an image into a remote claude session:** Cmd-V doesn't work over SSH (no clipboard bridge). Screenshot to clipboard, then locally `make paste-image` → it uploads to the workspace and clips `@/home/coder/.clips/clip-….png`; paste that into the claude prompt (Claude reads the image). Needs `pngpaste` for non-PNG (`brew install pngpaste`).
+
 ## One-time per workspace (persists on disk)
 
 ```bash

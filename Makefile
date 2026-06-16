@@ -1,4 +1,4 @@
-.PHONY: bootstrap deploy-control-plane create-template open-coder forward plan fmt validate destroy
+.PHONY: bootstrap deploy-control-plane create-template open-coder forward paste-image plan fmt validate destroy
 
 bootstrap: ## Enable GCP APIs, verify auth
 	./scripts/bootstrap-gcp.sh
@@ -14,6 +14,9 @@ open-coder: ## Open the Coder dashboard
 
 forward: ## Mirror a workspace's app/admin ports to localhost (follows dynamic devcontainer ports)
 	./scripts/forward-ports.sh
+
+paste-image: ## Upload the Mac clipboard image to the workspace; clips the @path for the claude prompt
+	./scripts/paste-image.sh
 
 plan: ## Terraform plan only
 	terraform -chdir=infra/terraform init -input=false
