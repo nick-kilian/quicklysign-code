@@ -14,15 +14,21 @@ if [ ! -x "$BIN/coder" ] && [ -n "${CODER_URL:-}" ]; then
   chmod +x "$BIN/coder"
 fi
 
-# --- Claude Code CLI (official native installer; self-updates) ---
+# --- Claude Code CLI (official native installer) ---
+# Install if missing, else update to latest on every boot. Best-effort: a failed
+# update (offline) must not abort the script — keep the installed version.
 if ! command -v claude >/dev/null 2>&1; then
   curl -fsSL https://claude.ai/install.sh | bash
+else
+  claude update >/dev/null 2>&1 || echo "WARN: claude update failed (continuing with installed version)"
 fi
 
 # --- Codex CLI (needs Node 22 from mise; install-dev-tools runs first) ---
+eval "$("$HOME/.local/bin/mise" activate bash --shims)" 2>/dev/null || true
 if ! command -v codex >/dev/null 2>&1; then
-  eval "$("$HOME/.local/bin/mise" activate bash --shims)" 2>/dev/null || true
   npm install -g @openai/codex || echo "WARN: codex install failed; run 'npm install -g @openai/codex' manually"
+else
+  npm install -g @openai/codex@latest >/dev/null 2>&1 || echo "WARN: codex update failed (continuing with installed version)"
 fi
 
 # --- Gemini CLI (third backend for the code-review ensemble) ---
