@@ -32,9 +32,11 @@ else
 fi
 
 # --- Gemini CLI (third backend for the code-review ensemble) ---
+# mise already activated above (codex block). Install if missing, else update.
 if ! command -v gemini >/dev/null 2>&1; then
-  eval "$("$HOME/.local/bin/mise" activate bash --shims)" 2>/dev/null || true
   npm install -g @google/gemini-cli || echo "WARN: gemini install failed; run 'npm install -g @google/gemini-cli' manually"
+else
+  npm install -g @google/gemini-cli@latest >/dev/null 2>&1 || echo "WARN: gemini update failed (continuing with installed version)"
 fi
 
 HOOK="$HOME/.local/bin/agent-activity-hook"
