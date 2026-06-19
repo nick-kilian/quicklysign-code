@@ -16,6 +16,17 @@ variable "zone" {
   default     = "us-west1-a"
 }
 
+variable "prod_read_projects" {
+  description = <<-EOT
+    Prod GCP projects the workspace SA is granted READ-ONLY logs + monitoring on
+    (cross-project). Your terraform credentials (ADC) need projectIamAdmin on
+    each of these. SECURITY: anyone who can use a workspace inherits this prod
+    read access, so keep the list and roles minimal.
+  EOT
+  type        = list(string)
+  default     = ["quicklysign-eu", "themassive-live", "quicklysign-financial"]
+}
+
 variable "coder_hostname" {
   description = "Public hostname for the Coder server (becomes CODER_ACCESS_URL). Point an A record at the reserved static IP after the first apply."
   type        = string

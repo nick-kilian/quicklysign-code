@@ -53,3 +53,26 @@ resource "google_project_iam_member" "workspace_monitoring" {
   role    = "roles/monitoring.metricWriter"
   member  = "serviceAccount:${google_service_account.coder_workspace.email}"
 }
+
+# --- Workspace read-only access to prod (cross-project) ---
+# Grants the workspace SA logs + monitoring *viewer* on each var.prod_read_projects
+# project so you can read prod logs/metrics from a workspace. Non-authoritative
+# (iam_member adds the binding, never touching other members). logging.viewer
+# excludes data-access / private logs by design.
+# SECURITY: anyone who can use a workspace inherits this prod read access — keep
+# the role set and project list minimal. Requires terraform ADC to have
+# projectIamAdmin on each target project.
+locals {
+  workspace_prod_read_roles = ["roles/logging.viewer", "roles/monitoring.viewer"]
+  workspace_prod_read = {
+    for pair in setproduct(var.prod_read_projects, local.workspace_prod_read_roles) :
+    "${pair[0]}|${pair[1]}" => { project = pair[0], role = pair[1] }
+  }
+}
+
+resource "google_project_iam_member" "workspace_prod_read" {
+  for_each = local.workspace_prod_read
+  project  = each.value.project
+  role     = each.value.role
+  member   = "serviceAccount:${google_service_account.coder_workspace.email}"
+}
