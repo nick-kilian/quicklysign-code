@@ -25,7 +25,8 @@ grep -q 'mise activate' "$HOME/.bashrc" 2>/dev/null || \
 eval "$("$HOME/.local/bin/mise" activate bash --shims)"
 
 mise use -g node@22
-mise use -g zellij@latest # optional multiplexer; tmux (apt) is the default
+mise use -g zellij@latest    # optional multiplexer; tmux (apt) is the default
+mise use -g terraform@latest # IaC CLI (this repo is terraform; + prod read access)
 
 # pnpm + devcontainers CLI via npm (Node 22 from mise)
 npm install -g pnpm @devcontainers/cli
@@ -57,7 +58,7 @@ uv tool install ruff >/dev/null 2>&1 || true
 # Put mise's python shims + uv tool bin on the NON-interactive PATH too, so an
 # agent's `bash -c` (which may not source .bashrc) gets mise's python3 (with
 # pip/venv) and poetry/ruff/uv — not the bare /usr/bin/python3.
-for b in python python3 python3.11 python3.12 python3.13; do
+for b in python python3 python3.11 python3.12 python3.13 terraform; do
   s="$HOME/.local/share/mise/shims/$b"
   [ -x "$s" ] && sudo ln -sf "$s" "/usr/local/bin/$b"
 done
