@@ -27,6 +27,16 @@ variable "prod_read_projects" {
   default     = ["quicklysign-eu", "themassive-live", "quicklysign-financial"]
 }
 
+variable "bots_deployer_sa_email" {
+  description = <<-EOT
+    Deploy SA in quicklysign-bots that workspaces impersonate to terraform-apply
+    the bot's infra. The SA and its quicklysign-bots roles are created by the
+    ESTATE IaC; this repo only grants the workspace SA tokenCreator on it.
+  EOT
+  type        = string
+  default     = "task-failure-bot-deployer@quicklysign-bots.iam.gserviceaccount.com"
+}
+
 variable "coder_hostname" {
   description = "Public hostname for the Coder server (becomes CODER_ACCESS_URL). Point an A record at the reserved static IP after the first apply."
   type        = string

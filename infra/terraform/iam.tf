@@ -76,3 +76,17 @@ resource "google_project_iam_member" "workspace_prod_read" {
   role     = each.value.role
   member   = "serviceAccount:${google_service_account.coder_workspace.email}"
 }
+
+# --- Workspace impersonation of the quicklysign-bots deploy SA ---
+# Lets a workspace terraform-apply task-failure-bot infra into quicklysign-bots
+# by impersonating that project's deploy SA — without the workspace SA holding
+# any standing admin on quicklysign-bots. The deploy SA itself + its roles + the
+# provider's impersonate_service_account live in the ESTATE IaC; this binding is
+# the only piece that touches the workspace SA, so it lives here. Revoke to cut
+# off access. Apply order: the estate IaC must create the deploy SA first (this
+# references it by email).
+resource "google_service_account_iam_member" "workspace_impersonate_bots_deployer" {
+  service_account_id = "projects/quicklysign-bots/serviceAccounts/${var.bots_deployer_sa_email}"
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.coder_workspace.email}"
+}
