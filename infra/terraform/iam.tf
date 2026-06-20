@@ -54,6 +54,39 @@ resource "google_project_iam_member" "workspace_monitoring" {
   member  = "serviceAccount:${google_service_account.coder_workspace.email}"
 }
 
+# --- Workspace read+write on the dev project's data/app services ---
+# quicklysign-terraform-dev doubles as the shared dev sandbox. Grant write on
+# the services actually in use so workspaces can exercise dev fully.
+# DELIBERATELY EXCLUDED — this project ALSO hosts the Coder control plane, the
+# Coder DB, and the workspace VMs: compute.* / cloudsql.admin / project IAM
+# admin / project-wide serviceAccountUser, so a workspace can't delete its own
+# control plane or DB, or escalate.
+# NOTE: secretmanager.admin spans ALL secrets here (incl coder-db-url + infra
+# creds) — downgrade to secretAccessor or add an IAM condition if too broad.
+locals {
+  dev_workspace_roles = [
+    "roles/datastore.user",
+    "roles/secretmanager.admin",
+    "roles/cloudsql.client",
+    "roles/storage.objectAdmin",
+    "roles/pubsub.editor",
+    "roles/run.developer",
+    "roles/cloudtasks.admin",
+    "roles/bigquery.dataEditor",
+    "roles/bigquery.jobUser",
+    "roles/logging.viewer",
+    "roles/monitoring.viewer",
+    "roles/artifactregistry.writer",
+  ]
+}
+
+resource "google_project_iam_member" "workspace_dev" {
+  for_each = toset(local.dev_workspace_roles)
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.coder_workspace.email}"
+}
+
 # --- Workspace read-only access to prod (cross-project) ---
 # Grants the workspace SA logs + monitoring *viewer* on each var.prod_read_projects
 # project so you can read prod logs/metrics from a workspace. Non-authoritative
