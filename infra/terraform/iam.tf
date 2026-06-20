@@ -87,6 +87,19 @@ resource "google_project_iam_member" "workspace_dev" {
   member   = "serviceAccount:${google_service_account.coder_workspace.email}"
 }
 
+# Same dev_workspace_roles write set on additional pure-app dev projects (no
+# Coder infra co-located -> none of the terraform-dev exclusions apply, and
+# their secrets are app-only). Extend via var.extra_dev_projects.
+resource "google_project_iam_member" "workspace_extra_dev" {
+  for_each = {
+    for pair in setproduct(var.extra_dev_projects, local.dev_workspace_roles) :
+    "${pair[0]}|${pair[1]}" => { project = pair[0], role = pair[1] }
+  }
+  project = each.value.project
+  role    = each.value.role
+  member  = "serviceAccount:${google_service_account.coder_workspace.email}"
+}
+
 # --- Workspace read-only access to prod (cross-project) ---
 # Grants the workspace SA logs + monitoring *viewer* on each var.prod_read_projects
 # project so you can read prod logs/metrics from a workspace. Non-authoritative

@@ -27,6 +27,17 @@ variable "prod_read_projects" {
   default     = ["quicklysign-eu", "themassive-live", "quicklysign-financial"]
 }
 
+variable "extra_dev_projects" {
+  description = <<-EOT
+    Additional PURE-APP dev projects (no Coder infra co-located) the workspace SA
+    gets the dev_workspace_roles read+write set on. Unlike quicklysign-terraform-dev
+    these need no self-destruct exclusions. SECURITY: every workspace user inherits
+    write on these projects' data/app services.
+  EOT
+  type        = list(string)
+  default     = ["quicklysign-python3-dev"]
+}
+
 variable "bots_deployer_sa_email" {
   description = <<-EOT
     Deploy SA in quicklysign-bots that workspaces impersonate to terraform-apply
