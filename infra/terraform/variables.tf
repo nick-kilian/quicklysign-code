@@ -49,9 +49,21 @@ variable "bots_deployer_sa_email" {
 }
 
 variable "coder_hostname" {
-  description = "Public hostname for the Coder server (becomes CODER_ACCESS_URL). Point an A record at the reserved static IP after the first apply."
+  description = "Primary public hostname for the Coder server (becomes CODER_ACCESS_URL). Point an A record at the reserved static IP after the first apply."
   type        = string
   default     = "coder.ragingbucket.com"
+}
+
+variable "coder_extra_hostnames" {
+  description = <<-EOT
+    Additional hostnames Caddy serves (and obtains certs for) alongside
+    coder_hostname — useful for an alias domain. CODER_ACCESS_URL stays the
+    primary coder_hostname; these are reverse-proxy aliases. Each needs an
+    A record pointing at the static IP, and (TLS-ALPN-01) it must resolve to
+    the origin IP directly (no Cloudflare proxy) so ACME can validate on 443.
+  EOT
+  type        = list(string)
+  default     = ["coder.quicklysign.com"]
 }
 
 variable "control_plane_machine_type" {

@@ -45,6 +45,8 @@ resource "google_compute_instance" "coder" {
   metadata_startup_script = templatefile("${path.module}/templates/control-plane-startup.sh.tftpl", {
     project_id     = var.project_id
     coder_hostname = var.coder_hostname
+    # Caddy site address line: primary + any alias hostnames, comma-separated.
+    coder_site_addresses = join(", ", concat([var.coder_hostname], var.coder_extra_hostnames))
   })
 
   depends_on = [
