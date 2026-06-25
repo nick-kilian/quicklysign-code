@@ -10,6 +10,18 @@ log() { echo "[coder-bootstrap] $*"; }
 apt-get update -qq
 apt-get install -y -qq curl jq gnupg apt-transport-https debian-keyring debian-archive-keyring
 
+# --- Automatic OS security patching ---
+# The control plane is internet-facing by necessity (Coder UI/SSH/DERP), so SCC
+# flags it as a "publicly accessible instance with exploitable vulnerability"
+# whenever an OS-package CVE lands. We can't drop the public IP, so keeping the
+# OS patched is the controllable half of that toxic combination. Install
+# unattended-upgrades for ongoing security patching and apply what's outstanding
+# on THIS boot. No automatic reboot (Debian default) — a kernel CVE still needs
+# a manual reboot during a maintenance window so we don't drop live sessions.
+apt-get install -y -qq unattended-upgrades
+unattended-upgrade -v 2>&1 | tail -3 || log "WARN: immediate unattended-upgrade run failed (continuing)"
+systemctl enable --now unattended-upgrades 2>/dev/null || true
+
 # --- Caddy (TLS termination, automatic Let's Encrypt certificates) ---
 if ! command -v caddy >/dev/null 2>&1; then
   log "installing caddy"
