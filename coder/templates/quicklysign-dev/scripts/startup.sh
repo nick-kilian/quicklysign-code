@@ -27,8 +27,16 @@ curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr
 chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
 
+# Azure CLI (official Microsoft repo). Per-repo signed-by keyring like docker/gh,
+# so a Microsoft key rotation can't wedge the rest of apt. Auth is interactive
+# (`az login`); the terraform azurerm provider picks up the CLI session by
+# default (use_cli), so no service principal / managed identity is needed.
+curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg
+chmod go+r /etc/apt/keyrings/microsoft.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ noble main" > /etc/apt/sources.list.d/azure-cli.list
+
 apt-get update -qq
-apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin gh
+apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin gh azure-cli
 
 # Google Cloud CLI via snap: immune to Google's apt key rotations
 snap install google-cloud-cli --classic
