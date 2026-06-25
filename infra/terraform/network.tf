@@ -28,15 +28,19 @@ resource "google_service_networking_connection" "private_vpc_connection" {
   reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
 }
 
-# Custom VPCs deny all ingress by default. Only open what we need:
-# HTTP/HTTPS to the control plane (80 is required for Let's Encrypt HTTP-01).
+# Custom VPCs deny all ingress by default. Only open what we need: HTTPS to the
+# control plane. Port 80 is intentionally NOT opened — Caddy uses the ACME
+# TLS-ALPN-01 challenge (over 443) rather than HTTP-01, so port 80 is unneeded.
+# This closes the SCC OPEN_HTTP_PORT finding and narrows the public surface to
+# 443 only. (Caddy still binds :80 locally for an http->https redirect, but it's
+# not reachable externally — users reach Coder via the https URL.)
 resource "google_compute_firewall" "coder_https" {
   name    = "coder-allow-https"
   network = google_compute_network.vpc.name
 
   allow {
     protocol = "tcp"
-    ports    = ["80", "443"]
+    ports    = ["443"]
   }
 
   source_ranges = ["0.0.0.0/0"]

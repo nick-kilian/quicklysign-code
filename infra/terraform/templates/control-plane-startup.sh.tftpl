@@ -63,9 +63,16 @@ EOF
 chmod 600 /etc/coder.d/coder.env
 
 # --- Caddy reverse proxy with automatic HTTPS ---
+# disable_http_challenge forces ACME TLS-ALPN-01 (over 443), so the firewall
+# never has to open port 80 (see network.tf / SCC OPEN_HTTP_PORT finding).
 cat > /etc/caddy/Caddyfile <<EOF
 ${coder_hostname} {
 	reverse_proxy 127.0.0.1:3000
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
 }
 EOF
 
