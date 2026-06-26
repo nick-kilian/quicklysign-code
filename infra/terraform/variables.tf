@@ -62,7 +62,7 @@ variable "oidc_client_id" {
     secret and is fetched at boot, like the DB URL.
   EOT
   type        = string
-  default     = ""
+  default     = "182084267345-gcv0jiipo2pcpgfa58cta929rlu1n1os.apps.googleusercontent.com"
 }
 
 variable "oidc_email_domain" {
