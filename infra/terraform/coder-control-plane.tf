@@ -47,6 +47,10 @@ resource "google_compute_instance" "coder" {
     coder_hostname = var.coder_hostname
     # Caddy site address line: primary + any alias hostnames, comma-separated.
     coder_site_addresses = join(", ", concat([var.coder_hostname], var.coder_extra_hostnames))
+    # OIDC (Google) login — inert while oidc_client_id is "".
+    oidc_client_id     = var.oidc_client_id
+    oidc_email_domain  = var.oidc_email_domain
+    oidc_allow_signups = var.oidc_allow_signups
   })
 
   depends_on = [

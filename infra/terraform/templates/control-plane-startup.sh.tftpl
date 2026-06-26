@@ -62,6 +62,32 @@ CODER_PG_CONNECTION_URL=$DB_URL
 EOF
 chmod 600 /etc/coder.d/coder.env
 
+%{ if oidc_client_id != "" ~}
+# --- Google OIDC login config (appended) ---
+# Client secret comes from Secret Manager (never metadata/git), like the DB URL.
+# ALLOW_SIGNUPS=${oidc_allow_signups}: when false, only pre-created users may log
+# in (manual allow-list). EMAIL_DOMAIN restricts to ${oidc_email_domain}.
+log "configuring Google OIDC login"
+OIDC_CLIENT_SECRET=$(curl -sf -H "Authorization: Bearer $ACCESS_TOKEN" \
+  "https://secretmanager.googleapis.com/v1/projects/${project_id}/secrets/coder-oidc-client-secret/versions/latest:access" \
+  | jq -r .payload.data | base64 -d)
+if [ -z "$OIDC_CLIENT_SECRET" ]; then
+  log "ERROR: oidc_client_id is set but coder-oidc-client-secret has no value; skipping OIDC"
+else
+  cat >> /etc/coder.d/coder.env <<OIDCEOF
+CODER_OIDC_ISSUER_URL=https://accounts.google.com
+CODER_OIDC_CLIENT_ID=${oidc_client_id}
+CODER_OIDC_CLIENT_SECRET=$OIDC_CLIENT_SECRET
+CODER_OIDC_EMAIL_DOMAIN=${oidc_email_domain}
+CODER_OIDC_SCOPES=openid,profile,email
+CODER_OIDC_ALLOW_SIGNUPS=${oidc_allow_signups}
+CODER_OIDC_SIGN_IN_TEXT=Sign in with Google
+CODER_OIDC_ICON_URL=/icon/google.svg
+OIDCEOF
+  chmod 600 /etc/coder.d/coder.env
+fi
+%{ endif ~}
+
 # --- Caddy reverse proxy with automatic HTTPS ---
 # disable_http_challenge forces ACME TLS-ALPN-01 (over 443), so the firewall
 # never has to open port 80 (see network.tf / SCC OPEN_HTTP_PORT finding).

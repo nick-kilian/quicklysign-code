@@ -54,6 +54,33 @@ variable "coder_hostname" {
   default     = "coder.ragingbucket.com"
 }
 
+variable "oidc_client_id" {
+  description = <<-EOT
+    Google OAuth 2.0 Web client ID for Coder OIDC login. Empty disables OIDC
+    (the startup script then writes no OIDC config). The matching client secret
+    is NOT a variable — it lives in the coder-oidc-client-secret Secret Manager
+    secret and is fetched at boot, like the DB URL.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "oidc_email_domain" {
+  description = "Comma-separated email domain(s) allowed to log in via OIDC."
+  type        = string
+  default     = "quicklysign.com"
+}
+
+variable "oidc_allow_signups" {
+  description = <<-EOT
+    If false, OIDC will NOT auto-provision new users — only users pre-created in
+    Coder can log in (a manual allow-list, the OSS substitute for group gating).
+    Recommended false; pre-create the first owner.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "coder_extra_hostnames" {
   description = <<-EOT
     Additional hostnames Caddy serves (and obtains certs for) alongside
