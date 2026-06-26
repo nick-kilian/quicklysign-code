@@ -81,6 +81,26 @@ variable "oidc_allow_signups" {
   default     = false
 }
 
+variable "disable_password_auth" {
+  description = <<-EOT
+    Disable built-in email/password login (CODER_DISABLE_PASSWORD_AUTH). With
+    Google OIDC live and no password users, password login is unused. Break-glass
+    if ever locked out: re-enable here (or on the host) + restart coder.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "disable_github_auth" {
+  description = <<-EOT
+    Disable the built-in GitHub login provider
+    (CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE=false). Keep false until the
+    GitHub-based owner account (nick-kilian) is migrated to OIDC, THEN flip true.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "coder_extra_hostnames" {
   description = <<-EOT
     Additional hostnames Caddy serves (and obtains certs for) alongside

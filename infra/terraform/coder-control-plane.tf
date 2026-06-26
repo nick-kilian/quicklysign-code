@@ -51,6 +51,9 @@ resource "google_compute_instance" "coder" {
     oidc_client_id     = var.oidc_client_id
     oidc_email_domain  = var.oidc_email_domain
     oidc_allow_signups = var.oidc_allow_signups
+    # Login-method toggles.
+    disable_password_auth = var.disable_password_auth
+    disable_github_auth   = var.disable_github_auth
   })
 
   depends_on = [
