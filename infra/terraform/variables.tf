@@ -51,7 +51,7 @@ variable "bots_deployer_sa_email" {
 variable "coder_hostname" {
   description = "Primary public hostname for the Coder server (becomes CODER_ACCESS_URL). Point an A record at the reserved static IP after the first apply."
   type        = string
-  default     = "coder.ragingbucket.com"
+  default     = "coder.quicklysign.com"
 }
 
 variable "oidc_client_id" {
@@ -90,7 +90,7 @@ variable "coder_extra_hostnames" {
     the origin IP directly (no Cloudflare proxy) so ACME can validate on 443.
   EOT
   type        = list(string)
-  default     = ["coder.quicklysign.com"]
+  default     = ["coder.ragingbucket.com"]
 }
 
 variable "control_plane_machine_type" {
