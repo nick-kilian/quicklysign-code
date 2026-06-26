@@ -136,3 +136,14 @@ resource "google_service_account_iam_member" "workspace_impersonate_bots_deploye
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:${google_service_account.coder_workspace.email}"
 }
+
+# Workspace read-only access to the task-failure-bot's logs in quicklysign-bots,
+# so a lane can debug the bot's Cloud Run service (enrichment fallbacks, GitHub
+# token errors, claude-runner failures) directly from the workspace. Read-only:
+# logging.viewer, no write/admin. Like the prod-read grants, this is a
+# workspace-SA grant so it lives here rather than the estate IaC.
+resource "google_project_iam_member" "workspace_bots_logging" {
+  project = "quicklysign-bots"
+  role    = "roles/logging.viewer"
+  member  = "serviceAccount:${google_service_account.coder_workspace.email}"
+}
