@@ -23,5 +23,10 @@
     "name": "quicklysign-conversion-v2",
     "url": "https://github.com/QuicklySign/quicklysign-conversion-v2.git",
     "path": "~/src/quicklysign-conversion-v2"
+  },
+  {
+    "name": "quicklysign-iac",
+    "url": "https://github.com/QuicklySign/quicklysign-iac.git",
+    "path": "~/src/quicklysign-iac"
   }
 ]
