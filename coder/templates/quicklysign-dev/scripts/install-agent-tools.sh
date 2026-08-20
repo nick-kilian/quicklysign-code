@@ -23,6 +23,14 @@ else
   claude update >/dev/null 2>&1 || echo "WARN: claude update failed (continuing with installed version)"
 fi
 
+# --- Atlassian (Jira + Confluence) remote MCP, user scope ---
+# URL-only server (no local runtime); no secrets here — each user OAuths once
+# via `/mcp` in a claude session. Idempotent: only add if not already present.
+if command -v claude >/dev/null 2>&1 && ! claude mcp get atlassian >/dev/null 2>&1; then
+  claude mcp add --transport sse atlassian https://mcp.atlassian.com/v1/sse --scope user \
+    >/dev/null 2>&1 || echo "WARN: could not register the atlassian MCP server"
+fi
+
 # --- Codex CLI (needs Node 22 from mise; install-dev-tools runs first) ---
 eval "$("$HOME/.local/bin/mise" activate bash --shims)" 2>/dev/null || true
 if ! command -v codex >/dev/null 2>&1; then
