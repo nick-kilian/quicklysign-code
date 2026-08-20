@@ -58,6 +58,9 @@ jq --argjson entry "$(hook_entry)" '
   | .hooks.Stop             = $entry
   | .hooks.Notification     = $entry
   | .hooks.SessionEnd       = $entry
+  # Keep agent transcripts for 3 years (default is 30 days, which silently
+  # purges an idle lane`s resumable history). // preserves a manual override.
+  | .cleanupPeriodDays = (.cleanupPeriodDays // 1095)
 ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
 
 # --- Codex notify hook: fires on agent-turn-complete (= waiting for input).
