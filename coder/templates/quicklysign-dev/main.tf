@@ -138,20 +138,49 @@ resource "coder_agent" "main" {
     install-agent-tools 2>&1 | tee -a "$HOME/.local/state/install-agent-tools.log"
     setup-repos         2>&1 | tee -a "$HOME/.local/state/setup-repos.log" || true
 
-    # --- upgrade the watchdog credential to a long-lived API token ---
-    # The injected owner session token (written above) is short-lived: it
-    # expired mid-session, `coder schedule extend` then failed, and the
-    # workspace autostopped with active Claude sessions. Now that the coder CLI
-    # exists (install-agent-tools, above) and the session token is still fresh,
-    # mint a long-lived token (server max 168h/7d) for the watchdog, persist it
-    # on the disk, and reuse it across boots until it stops validating. If
-    # minting is unavailable, the session-token env written above stands.
+    # --- upgrade the watchdog credential to a long-lived, SELF-RENEWING token ---
+    # The injected owner session token is short-lived, and Coder caps ANY token
+    # at 168h/7d — so a token minted once silently expires a week later and the
+    # workspace then autostops even while agents are actively working. The old
+    # logic only re-minted on validation FAILURE, and re-minted from the owner
+    # session token, which isn't fresh on automated/spot restarts — so the mint
+    # failed and the dead token persisted for months.
+    #
+    # Fix: roll the token BEFORE it expires, using the token ITSELF as the mint
+    # credential (no dependence on the owner session token in steady state). Each
+    # boot: keep the stored token if it's valid AND younger than 4 days;
+    # otherwise mint a fresh 168h token (from the stored token if still valid,
+    # else the owner session token for cold start) under a unique name and swap
+    # it in only after it validates. Boots are frequent, so this stays ahead of
+    # the 7-day cap; a full cold start is only needed if the workspace sits
+    # stopped >7 days.
     umask 077
     LL_FILE="$HOME/.config/agent-watchdog/api-token"
-    if ! { [ -s "$LL_FILE" ] && CODER_SESSION_TOKEN="$(cat "$LL_FILE")" coder whoami >/dev/null 2>&1; }; then
-      CODER_SESSION_TOKEN='${data.coder_workspace_owner.me.session_token}' coder tokens remove "watchdog-${data.coder_workspace.me.name}" >/dev/null 2>&1 || true
-      _tok=$(CODER_SESSION_TOKEN='${data.coder_workspace_owner.me.session_token}' coder tokens create --lifetime 168h --name "watchdog-${data.coder_workspace.me.name}" 2>/dev/null | tail -1 || true)
-      [ -n "$_tok" ] && printf '%s' "$_tok" > "$LL_FILE"
+    OWNER_TOK='${data.coder_workspace_owner.me.session_token}'
+
+    stored_valid=false
+    if [ -s "$LL_FILE" ] && CODER_SESSION_TOKEN="$(cat "$LL_FILE")" coder whoami >/dev/null 2>&1; then
+      stored_valid=true
+    fi
+    # Renew if the token is invalid/missing, or older than 4 days (3-day margin
+    # under the 7-day cap). find -mtime +4 prints the file only when older.
+    need_new=true
+    if $stored_valid && [ -z "$(find "$LL_FILE" -mtime +4 2>/dev/null)" ]; then
+      need_new=false
+    fi
+    if $need_new; then
+      if $stored_valid; then MINT_TOK="$(cat "$LL_FILE")"; else MINT_TOK="$OWNER_TOK"; fi
+      _name="watchdog-${data.coder_workspace.me.name}-$(date +%s)"
+      _tok=$(CODER_SESSION_TOKEN="$MINT_TOK" coder tokens create --lifetime 168h --name "$_name" 2>/dev/null | tail -1 || true)
+      # Only overwrite once the new token actually validates (a token contains a
+      # hyphen, so don't pattern-match it — verify with whoami).
+      if [ -n "$_tok" ] && CODER_SESSION_TOKEN="$_tok" coder whoami >/dev/null 2>&1; then
+        printf '%s' "$_tok" > "$LL_FILE"
+        # prune superseded watchdog-* tokens (best-effort; they'd auto-expire).
+        CODER_SESSION_TOKEN="$_tok" coder tokens list -o json 2>/dev/null \
+          | jq -r --arg keep "$_name" '.[]? | select((.token_name // .name // "") | startswith("watchdog-")) | select((.token_name // .name) != $keep) | .id' 2>/dev/null \
+          | while read -r _id; do [ -n "$_id" ] && CODER_SESSION_TOKEN="$_tok" coder tokens remove "$_id" >/dev/null 2>&1 || true; done
+      fi
     fi
     if [ -s "$LL_FILE" ]; then
       printf '%s\n' \
