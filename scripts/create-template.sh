@@ -11,7 +11,7 @@ if ! command -v coder >/dev/null 2>&1; then
 fi
 
 if ! coder templates list >/dev/null 2>&1; then
-  echo "ERROR: not logged in to Coder. Run: coder login https://coder.ragingbucket.com"
+  echo "ERROR: not logged in to Coder. Run: coder login https://coder.quicklysign.com"
   exit 1
 fi
 

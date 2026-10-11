@@ -12,7 +12,7 @@ alive only while they're actually working.
 | Workspaces | `t2d-standard-4` Spot VMs, 200 GB persistent disk, Ubuntu 24.04 | `coder/templates/quicklysign-dev/` |
 | Idle logic | hook-driven watchdog bumping `coder schedule extend` | `coder/templates/quicklysign-dev/scripts/` |
 
-Access URL: **https://coder.ragingbucket.com** (Cloud Run was evaluated and
+Access URL: **https://coder.quicklysign.com** (Cloud Run was evaluated and
 rejected for the control plane — see `docs/architecture.md` §1).
 
 ## Setup
@@ -23,9 +23,9 @@ Prereqs: `gcloud` (authenticated, with Application Default Credentials),
 ```bash
 make bootstrap              # enable GCP APIs, check auth
 make deploy-control-plane   # terraform apply; prints the DNS record to create
-# create the printed A record: coder.ragingbucket.com -> <static ip>
-# open https://coder.ragingbucket.com, create the admin account, then:
-coder login https://coder.ragingbucket.com
+# create the printed A record: coder.quicklysign.com -> <static ip>
+# open https://coder.quicklysign.com, create the admin account, then:
+coder login https://coder.quicklysign.com
 make create-template        # push the quicklysign-dev workspace template
 make open-coder
 ```
@@ -93,7 +93,7 @@ docs/                     architecture, operations, idle-detection, security
 
 ## TODO — values/decisions still open
 
-- [x] **DNS**: `coder.ragingbucket.com A 35.252.103.129` (Cloudflare, **DNS only** — do not proxy; it breaks ACME and the WebSocket relay).
+- [x] **DNS**: `coder.quicklysign.com A 35.252.103.129` (Cloudflare, **DNS only** — do not proxy; it breaks ACME and the WebSocket relay).
 - [x] **repos.json**: the 5 active QuicklySign repos (python3, monitoring, ml, office-365, conversion-v2). Edit + `make create-template` to change.
 - [ ] **Logins** (once per workspace): `gh auth login`, `claude`, `codex login --device-auth`.
 - [ ] Optional: GitHub external auth via a Coder OAuth app later (replaces per-workspace `gh auth login`); subdomain wildcard (`CODER_WILDCARD_ACCESS_URL`) only if you want dashboard port-forwarding — needs a DNS-01 wildcard cert, deliberately skipped for now.

@@ -8,12 +8,12 @@ make bootstrap              # enables APIs in quicklysign-terraform-dev
 make deploy-control-plane   # terraform apply; prints the DNS record
 ```
 
-Create the printed DNS record (`coder.ragingbucket.com A <static-ip>`), wait
+Create the printed DNS record (`coder.quicklysign.com A <static-ip>`), wait
 ~2 minutes for VM bootstrap + Let's Encrypt, then:
 
 ```bash
-open https://coder.ragingbucket.com    # first visit creates the admin account
-coder login https://coder.ragingbucket.com
+open https://coder.quicklysign.com    # first visit creates the admin account
+coder login https://coder.quicklysign.com
 make create-template
 ```
 

@@ -41,10 +41,10 @@ Secret Manager and is fetched by the control plane VM at boot.
 
 ## 3. How is the server exposed publicly and securely?
 
-- Reserved **static IP** + DNS A record: `coder.ragingbucket.com`.
+- Reserved **static IP** + DNS A record: `coder.quicklysign.com`.
 - **Caddy** terminates TLS (automatic Let's Encrypt) and proxies to coderd on
   `127.0.0.1:3000`. Caddy fully supports WebSockets.
-- `CODER_ACCESS_URL=https://coder.ragingbucket.com`. The built-in
+- `CODER_ACCESS_URL=https://coder.quicklysign.com`. The built-in
   `*.try.coder.app` tunnel is testing-only (URL changes every restart —
   [coder#1176](https://github.com/coder/coder/issues/1176)), so it is not used.
 - `CODER_WILDCARD_ACCESS_URL` (subdomain apps / dashboard port forwarding) is
@@ -138,7 +138,7 @@ HA — none required for a single-user deployment
 ```
             ┌──────────────────── GCP project: quicklysign-terraform-dev ──────────┐
             │                                                                      │
- Warp/IDE ──┼──► https://coder.ragingbucket.com (static IP)                        │
+ Warp/IDE ──┼──► https://coder.quicklysign.com (static IP)                        │
             │      Caddy (TLS) ──► coderd :3000  ── e2-small VM, coder-vpc         │
             │                        │  ▲                                          │
             │      Cloud SQL ◄───────┘  │ outbound WebSocket (agent)               │

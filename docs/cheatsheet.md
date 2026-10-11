@@ -1,13 +1,13 @@
 # QuicklySign Coder — Cheat Sheet
 
-Workspace: **quicklysign-dev** · URL: **https://coder.ragingbucket.com** · SSH host: **quicklysign-dev.coder**
+Workspace: **quicklysign-dev** · URL: **https://coder.quicklysign.com** · SSH host: **quicklysign-dev.coder**
 
 ---
 
 ## Local (your Mac / Warp)
 
 ```bash
-coder login https://coder.ragingbucket.com   # once
+coder login https://coder.quicklysign.com   # once
 coder config-ssh                              # once per machine → creates <ws>.coder host
 
 coder list                                    # workspaces + status + "outdated?"
