@@ -86,6 +86,22 @@ data "coder_parameter" "machine_type" {
   }
 }
 
+# One-time migration knob: clone this workspace's root disk from an EXISTING
+# disk in the same project/zone (e.g. moving a workspace to a new owner account,
+# where the disk name is owner-derived and would otherwise be a blank image).
+# Empty (default) = fresh disk from the base image, so existing/other workspaces
+# are unaffected. When set, the control-plane SA clones that disk server-side at
+# first build; the disk then persists and this is inert (ignore_changes). Value
+# is a disk name or self-link, e.g.
+# projects/quicklysign-terraform-dev/zones/us-west1-a/disks/coder-nick-kilian-quicklysign-dev-root
+data "coder_parameter" "root_source_disk" {
+  name         = "root_source_disk"
+  display_name = "Root disk clone source (migration)"
+  description  = "Optional: name/self-link of an existing disk to clone the root disk from. Empty = fresh from base image."
+  default      = ""
+  mutable      = true
+}
+
 resource "coder_agent" "main" {
   arch = "amd64"
   os   = "linux"
@@ -130,7 +146,7 @@ resource "coder_agent" "main" {
     printf '%s\n' \
       'CODER_URL=${data.coder_workspace.me.access_url}' \
       'CODER_SESSION_TOKEN=${data.coder_workspace_owner.me.session_token}' \
-      'CODER_WORKSPACE_NAME=${data.coder_workspace.me.name}' \
+      'CODER_WORKSPACE_NAME=${data.coder_workspace_owner.me.name}/${data.coder_workspace.me.name}' \
       > "$HOME/.config/agent-watchdog/env"
     umask 022
 
@@ -186,7 +202,7 @@ resource "coder_agent" "main" {
       printf '%s\n' \
         'CODER_URL=${data.coder_workspace.me.access_url}' \
         "CODER_SESSION_TOKEN=$(cat "$LL_FILE")" \
-        'CODER_WORKSPACE_NAME=${data.coder_workspace.me.name}' \
+        'CODER_WORKSPACE_NAME=${data.coder_workspace_owner.me.name}/${data.coder_workspace.me.name}' \
         > "$HOME/.config/agent-watchdog/env"
     fi
     umask 022
@@ -229,15 +245,18 @@ resource "coder_agent" "main" {
 # preemption. Everything — OS, installed tools, home dir, repos, Claude/Codex
 # sessions and credentials — persists here.
 resource "google_compute_disk" "root" {
-  name   = "${local.workspace_name}-root"
-  type   = "pd-balanced"
-  zone   = var.zone
-  image  = "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
-  size   = var.disk_size_gb
-  labels = local.common_labels
+  name = "${local.workspace_name}-root"
+  type = "pd-balanced"
+  zone = var.zone
+  # Fresh from the base image, unless a migration clone source is given — then
+  # the disk is cloned bit-for-bit from that existing disk (see root_source_disk).
+  image       = data.coder_parameter.root_source_disk.value == "" ? "ubuntu-os-cloud/ubuntu-2404-lts-amd64" : null
+  source_disk = data.coder_parameter.root_source_disk.value == "" ? null : data.coder_parameter.root_source_disk.value
+  size        = var.disk_size_gb
+  labels      = local.common_labels
 
   lifecycle {
-    ignore_changes = [name, image]
+    ignore_changes = [name, image, source_disk]
   }
 }
 
