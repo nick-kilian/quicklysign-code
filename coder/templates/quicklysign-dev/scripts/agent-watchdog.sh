@@ -69,21 +69,33 @@ pane_changed() { # <lane>  -> returns 0 and refreshes marker on content change
 }
 
 busy_children() { # <lane> -> count of known busy processes under the pane
-  local pane_pid
+  local pane_pid pid args n=0
   pane_pid=$(tmux list-panes -t "=$1:" -F '#{pane_pid}' 2>/dev/null | head -1)
   [ -n "$pane_pid" ] || { echo 0; return; }
-  ps -eo pid=,ppid=,comm= | awk -v root="$pane_pid" -v busy="^($BUSY_PROCS)" '
+  # awk prints the pid of every busy-named process descended from the pane;
+  # the loop then drops long-lived MCP servers the agent spawns. An MCP server
+  # (e.g. serena via `uvx ... start-mcp-server`) runs under uv/npx and sleeps
+  # for the whole session, so it would otherwise read as permanently busy —
+  # the same reason bare node/python/bash are excluded from BUSY_PROCS above.
+  while read -r pid; do
+    [ -n "$pid" ] || continue
+    args=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)
+    case "$args" in
+      *mcp-server*|*mcp_server*|*start-mcp*) continue ;;
+    esac
+    n=$((n + 1))
+  done < <(ps -eo pid=,ppid=,comm= | awk -v root="$pane_pid" -v busy="^($BUSY_PROCS)" '
     { ppid[$1]=$2; comm[$1]=$3 }
     END {
       for (p in ppid) {
         q = p
         while (q in ppid && ppid[q] != 1) {
-          if (ppid[q] == root) { if (comm[p] ~ busy) n++; break }
+          if (ppid[q] == root) { if (comm[p] ~ busy) print p; break }
           q = ppid[q]
         }
       }
-      print n + 0
-    }'
+    }')
+  echo "$n"
 }
 
 recent_file_changes() { # <repo> -> 0 if any file changed within the window
